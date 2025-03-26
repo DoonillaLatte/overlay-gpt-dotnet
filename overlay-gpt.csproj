@@ -8,5 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
-
+  <ItemGroup>
+	<Compile Include="obj/Debug/net9.0-windows/*.cs">
+		<AutoGen>True</AutoGen>
+	</Compile>
+</ItemGroup>
 </Project>
