@@ -5,10 +5,15 @@
         WindowStartupLocation="Manual"
         Top="0" Left="0">
     <Grid>
-        <TextBox x:Name="LogTextBox" 
-                 IsReadOnly="True"
-                 TextWrapping="Wrap"
-                 VerticalScrollBarVisibility="Auto"
-                 Margin="10"/>
+        <RichTextBox x:Name="LogRichTextBox" 
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     Margin="10">
+            <RichTextBox.Resources>
+                <Style TargetType="{x:Type Paragraph}">
+                    <Setter Property="Margin" Value="0"/>
+                </Style>
+            </RichTextBox.Resources>
+        </RichTextBox>
     </Grid>
 </Window> 

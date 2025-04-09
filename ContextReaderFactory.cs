@@ -1,4 +1,7 @@
 using System.Windows.Automation;
+using System.Runtime.InteropServices;
+using Excel = Microsoft.Office.Interop.Excel;
+using Microsoft.VisualBasic;
 
 namespace overlay_gpt
 {
@@ -8,14 +11,36 @@ namespace overlay_gpt
         {
             if (element == null)
                 return new TextPatternContextReader();
+                
+            // Excel 리더 추가
+            try
+            {   
+                //return new ExcelContextReader();
+            }
+            catch
+            {
+                // Excel이 실행 중이 아닌 경우 무시
+            }
+                
+            // TextBox나 ValueBox일 때 포커스 여부 확인
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 
+                element.TryGetCurrentPattern(ValuePattern.Pattern, out _))
+            {
+                // 현재 포커스된 요소와 비교
+                var focusedElement = AutomationElement.FocusedElement;
+                if (focusedElement != null && focusedElement.Equals(element))
+                {
+                    if (element.TryGetCurrentPattern(TextPattern.Pattern, out _))
+                        return new TextPatternContextReader();
+                    
+                    if (element.TryGetCurrentPattern(ValuePattern.Pattern, out _))
+                        return new ValuePatternContextReader();
+                }
+                return new ClipboardContextReader();
+            }
 
-            if (element.TryGetCurrentPattern(TextPattern.Pattern, out _))
-                return new TextPatternContextReader();
-            
-            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out _))
-                return new ValuePatternContextReader();
-
-            return new TextPatternContextReader();
+            // 클립보드 리더 추가
+            return new ClipboardContextReader();
         }
     }
 } 

@@ -22,9 +22,11 @@ namespace overlay_gpt
 
         protected void LogStyleAttributes(Dictionary<string, object> styleAttributes)
         {
-            LogWindow.Instance.Log($"Style - FontName: {styleAttributes["FontName"]}, FontSize: {styleAttributes["FontSize"]}, " +
-                               $"FontWeight: {styleAttributes["FontWeight"]}, ForegroundColor: {styleAttributes["ForegroundColor"]}, " +
-                               $"BackgroundColor: {styleAttributes["BackgroundColor"]}, UnderlineStyle: {styleAttributes["UnderlineStyle"]}");
+            string styleInfo = $"Style - FontName: {styleAttributes["FontName"]}, FontSize: {styleAttributes["FontSize"]}, " +
+                             $"FontWeight: {styleAttributes["FontWeight"]}, ForegroundColor: {styleAttributes["ForegroundColor"]}, " +
+                             $"BackgroundColor: {styleAttributes["BackgroundColor"]}, UnderlineStyle: {styleAttributes["UnderlineStyle"]}";
+            
+            LogWindow.Instance.LogWithStyle(styleInfo, styleAttributes);
         }
 
         public abstract (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle();

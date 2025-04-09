@@ -43,6 +43,7 @@ namespace overlay_gpt
         {
             var element = AutomationElement.FocusedElement;
             var reader = ContextReaderFactory.CreateReader(element);
+            LogWindow.Instance.Log($"Reader Type: {reader.GetType().Name}");
             var (selectedText, _) = reader.GetSelectedTextWithStyle();
             string context = selectedText;
             
