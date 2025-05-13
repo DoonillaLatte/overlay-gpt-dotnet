@@ -15,7 +15,7 @@ namespace overlay_gpt
             // Excel 리더 추가
             try
             {   
-                //return new ExcelContextReader();
+                return new ExcelContextReader();
             }
             catch
             {
