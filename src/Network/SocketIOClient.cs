@@ -35,6 +35,10 @@ namespace overlay_gpt.Network
             _socket.On("message_response", response =>
             {
                 var message = response.GetValue<string>();
+                Console.WriteLine("==========================================");
+                Console.WriteLine("Flask로부터 받은 메시지:");
+                Console.WriteLine(message);
+                Console.WriteLine("==========================================");
                 OnMessageReceived?.Invoke(this, message);
             });
 

@@ -73,17 +73,24 @@ public class WebSocketServer
                     
                     services.AddSignalR(options =>
                     {
-                        options.EnableDetailedErrors = true;  // 상세 오류 정보 활성화
-                        options.MaximumReceiveMessageSize = 102400;  // 최대 메시지 크기 설정
-                        options.KeepAliveInterval = TimeSpan.FromSeconds(15);  // 15초마다 keep-alive
-                        options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);  // 클라이언트 타임아웃 30초
-                        options.HandshakeTimeout = TimeSpan.FromSeconds(15);  // 핸드셰이크 타임아웃 15초
+                        options.EnableDetailedErrors = true;
+                        options.MaximumReceiveMessageSize = 102400;
+                        options.KeepAliveInterval = TimeSpan.FromSeconds(30);  // 30초마다 keep-alive
+                        options.ClientTimeoutInterval = TimeSpan.FromSeconds(120);  // 클라이언트 타임아웃 120초
+                        options.HandshakeTimeout = TimeSpan.FromSeconds(60);  // 핸드셰이크 타임아웃 60초
                     });
+
+                    // SocketIOConnection 서비스 등록
+                    services.AddSingleton<SocketIOConnection>();
                 })
                 .Build();
 
             await _host.StartAsync();
             _isRunning = true;
+            
+            // Socket.IO 연결 시작
+            var socketIOConnection = _host.Services.GetRequiredService<SocketIOConnection>();
+            await socketIOConnection.ConnectAsync();
             
             Console.WriteLine("==========================================");
             Console.WriteLine($"웹소켓 서버가 시작되었습니다.");
