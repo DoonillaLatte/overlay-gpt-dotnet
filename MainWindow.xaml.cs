@@ -10,15 +10,17 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Windows.Interop;
 using System.Windows.Automation;
-using overlay_gpt;
 
 namespace overlay_gpt 
 {
     public partial class MainWindow : Window
     {
+        private OverlayWindow? overlayWindow;
+        
         public MainWindow()
         {
             InitializeComponent();
+            
             
             // 로그 윈도우 표시
             LogWindow.Instance.Show();
@@ -42,10 +44,27 @@ namespace overlay_gpt
             var element = AutomationElement.FocusedElement;
             var reader = ContextReaderFactory.CreateReader(element);
             LogWindow.Instance.Log($"Reader Type: {reader.GetType().Name}");
-            var result = reader.GetSelectedTextWithStyle();
-            string context = result.SelectedText;
+            var (selectedText, _) = reader.GetSelectedTextWithStyle();
+            string context = selectedText;
             
-            LogWindow.Instance.Log($"Selected Text: {context}");
+            if (overlayWindow == null || !overlayWindow.IsLoaded)
+            {
+                overlayWindow = new OverlayWindow(context);
+                overlayWindow.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+            else
+            {
+                // 이미 보이는 상태면 숨기고, 숨겨진 상태면 보이기
+                if (overlayWindow.IsVisible)
+                {
+                    overlayWindow.Hide();
+                }
+                else
+                {
+                    overlayWindow.Show();
+                    overlayWindow.Activate();
+                }
+            }
         }
 
         protected override void OnSourceInitialized(EventArgs e)
