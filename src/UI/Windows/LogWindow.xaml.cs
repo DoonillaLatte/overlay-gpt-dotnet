@@ -2,15 +2,16 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Controls;
-using overlay_gpt.Scripts;
-using overlay_gpt.Services;
 using System.Text.Json;
+using System.Threading;
 
 namespace overlay_gpt;
 
 public partial class LogWindow : Window
 {
     private static LogWindow? _instance;
+    private static readonly SemaphoreSlim _instanceSemaphore = new SemaphoreSlim(1, 1);
+    private static readonly SemaphoreSlim _logSemaphore = new SemaphoreSlim(1, 1);
 
     public static LogWindow Instance
     {
@@ -21,6 +22,23 @@ public partial class LogWindow : Window
                 _instance = new LogWindow();
             }
             return _instance;
+        }
+    }
+
+    public static async Task<LogWindow> GetInstanceAsync()
+    {
+        await _instanceSemaphore.WaitAsync();
+        try
+        {
+            if (_instance == null || !_instance.IsLoaded)
+            {
+                _instance = new LogWindow();
+            }
+            return _instance;
+        }
+        finally
+        {
+            _instanceSemaphore.Release();
         }
     }
 
@@ -160,23 +178,32 @@ public partial class LogWindow : Window
 
     public void Log(string message)
     {
-        if (Dispatcher.CheckAccess())
+        Dispatcher.Invoke(() =>
         {
-            AddLogMessage(message);
-        }
-        else
-        {
-            Dispatcher.Invoke(() => AddLogMessage(message));
-        }
+            var paragraph = new Paragraph();
+            paragraph.Inlines.Add(new Run(message + "\n"));
+            LogRichTextBox.Document.Blocks.Add(paragraph);
+            LogRichTextBox.ScrollToEnd();
+        });
     }
 
-    private void AddLogMessage(string message)
+    public async Task LogAsync(string message)
     {
-        var paragraph = new Paragraph();
-        var run = new Run($"[{DateTime.Now:HH:mm:ss}] {message}");
-        paragraph.Inlines.Add(run);
-        LogRichTextBox.Document.Blocks.Add(paragraph);
-        LogRichTextBox.ScrollToEnd();
+        await _logSemaphore.WaitAsync();
+        try
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var paragraph = new Paragraph();
+                paragraph.Inlines.Add(new Run(message + "\n"));
+                LogRichTextBox.Document.Blocks.Add(paragraph);
+                LogRichTextBox.ScrollToEnd();
+            });
+        }
+        finally
+        {
+            _logSemaphore.Release();
+        }
     }
 
     public void LogWithStyle(string message, Dictionary<string, object> styleAttributes)
@@ -221,7 +248,7 @@ public partial class LogWindow : Window
         });
     }
 
-    private async void SendTestMessageButton_Click(object sender, RoutedEventArgs e)
+    private async Task SendTestMessageButton_ClickAsync(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -262,9 +289,6 @@ public partial class LogWindow : Window
             // 전송할 메시지 형식 로그 출력
             string messageJson = JsonSerializer.Serialize(message, new JsonSerializerOptions { WriteIndented = true });
             Log($"전송할 메시지 형식:\n{messageJson}");
-
-            await overlay_gpt.Services.WebSocketManager.Instance.SendMessageAsync(command, parameters);
-            Log($"메시지 전송 완료: command={command}");
             
             // 입력 필드 초기화
             CommandTextBox.Clear();
@@ -274,5 +298,10 @@ public partial class LogWindow : Window
         {
             Log($"메시지 전송 중 오류 발생: {ex.Message}");
         }
+    }
+
+    private void SendTestMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = SendTestMessageButton_ClickAsync(sender, e);
     }
 } 

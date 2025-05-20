@@ -11,29 +11,64 @@ using System.Windows.Shapes;
 using System.Windows.Interop;
 using System.Windows.Automation;
 using overlay_gpt;
+using overlay_gpt.Network;
 
 namespace overlay_gpt 
 {
     public partial class MainWindow : Window
     {
+        private WebSocketServer _webSocketServer;
+        private SocketIOConnection _socketIOConnection;
+
         public MainWindow()
         {
             InitializeComponent();
+            
+            // 웹소켓 서버 초기화
+            _webSocketServer = new WebSocketServer(8080);
+            
+            // Socket.IO 클라이언트 초기화
+            _socketIOConnection = new SocketIOConnection();
+            _socketIOConnection.OnMessageReceived += (sender, message) =>
+            {
+                LogWindow.Instance.Log($"Flask 서버로부터 메시지 수신: {message}");
+            };
             
             // 로그 윈도우 표시
             LogWindow.Instance.Show();
             LogWindow.Instance.Log("MainWindow Loaded");
             
             // 창 숨기기 설정을 Loaded 이벤트 안으로 이동
-            this.Loaded += (s, e) =>
+            this.Loaded += async (s, e) =>
             {
                 Console.WriteLine("Loaded");
                 var helper = new WindowInteropHelper(this);
                 HotkeyManager.RegisterHotKey(helper, ShowOverlay);
                 
+                // 웹소켓 서버 시작
+                await _webSocketServer.StartAsync();
+                
+                // Flask 웹소켓 서버 연결
+                try
+                {
+                    await _socketIOConnection.ConnectAsync();
+                    LogWindow.Instance.Log("Flask 웹소켓 서버 연결 성공");
+                }
+                catch (Exception ex)
+                {
+                    LogWindow.Instance.Log($"Flask 웹소켓 서버 연결 실패: {ex.Message}");
+                }
+                
                 // 핫키 등록 후에 창 숨기기
                 this.Hide();
                 this.ShowInTaskbar = false;
+            };
+
+            // 창이 닫힐 때 웹소켓 서버와 클라이언트 종료
+            this.Closing += async (s, e) =>
+            {
+                await _webSocketServer.StopAsync();
+                await _socketIOConnection.DisconnectAsync();
             };
         }
 
