@@ -1,11 +1,17 @@
 <Window x:Class="overlay_gpt.LogWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="로그" Height="300" Width="400"
+        Title="로그" Height="400" Width="500"
         WindowStartupLocation="Manual"
         Top="0" Left="0">
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
         <RichTextBox x:Name="LogRichTextBox" 
+                     Grid.Row="0"
                      IsReadOnly="True"
                      VerticalScrollBarVisibility="Auto"
                      Margin="10">
@@ -15,5 +21,43 @@
                 </Style>
             </RichTextBox.Resources>
         </RichTextBox>
+        
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Command 입력 -->
+            <Label Grid.Row="0" Grid.Column="0" Content="Command:" VerticalAlignment="Center"/>
+            <TextBox x:Name="CommandTextBox"
+                     Grid.Row="0" Grid.Column="1"
+                     Margin="5,5,10,5"
+                     VerticalContentAlignment="Center"/>
+
+            <!-- Parameter 입력 -->
+            <Label Grid.Row="1" Grid.Column="0" Content="Parameter:" VerticalAlignment="Center"/>
+            <TextBox x:Name="ParameterTextBox"
+                     Grid.Row="1" Grid.Column="1"
+                     Margin="5,5,10,5"
+                     VerticalContentAlignment="Center"
+                     TextWrapping="Wrap"
+                     AcceptsReturn="True"
+                     Height="60"/>
+
+            <!-- 전송 버튼 -->
+            <Button x:Name="SendTestMessageButton"
+                    Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+                    Content="전송"
+                    Padding="10,5"
+                    Margin="0,5,0,5"
+                    Click="SendTestMessageButton_Click"/>
+        </Grid>
     </Grid>
 </Window> 

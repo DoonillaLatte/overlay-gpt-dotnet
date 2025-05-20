@@ -2,6 +2,9 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Controls;
+using overlay_gpt.Scripts;
+using overlay_gpt.Services;
+using System.Text.Json;
 
 namespace overlay_gpt;
 
@@ -157,14 +160,23 @@ public partial class LogWindow : Window
 
     public void Log(string message)
     {
-        Dispatcher.Invoke(() =>
+        if (Dispatcher.CheckAccess())
         {
-            var paragraph = new Paragraph();
-            var run = new Run(message + "\n");
-            paragraph.Inlines.Add(run);
-            LogRichTextBox.Document.Blocks.Add(paragraph);
-            LogRichTextBox.ScrollToEnd();
-        });
+            AddLogMessage(message);
+        }
+        else
+        {
+            Dispatcher.Invoke(() => AddLogMessage(message));
+        }
+    }
+
+    private void AddLogMessage(string message)
+    {
+        var paragraph = new Paragraph();
+        var run = new Run($"[{DateTime.Now:HH:mm:ss}] {message}");
+        paragraph.Inlines.Add(run);
+        LogRichTextBox.Document.Blocks.Add(paragraph);
+        LogRichTextBox.ScrollToEnd();
     }
 
     public void LogWithStyle(string message, Dictionary<string, object> styleAttributes)
@@ -207,5 +219,60 @@ public partial class LogWindow : Window
             LogRichTextBox.Document.Blocks.Add(paragraph);
             LogRichTextBox.ScrollToEnd();
         });
+    }
+
+    private async void SendTestMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string command = CommandTextBox.Text.Trim();
+            string parameterText = ParameterTextBox.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                Log("Command를 입력해주세요.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(parameterText))
+            {
+                Log("Parameter를 입력해주세요.");
+                return;
+            }
+
+            // Parameter를 JSON으로 파싱
+            object? parameters;
+            try
+            {
+                parameters = JsonSerializer.Deserialize<object>(parameterText);
+            }
+            catch (Exception ex)
+            {
+                Log($"Parameter JSON 파싱 실패: {ex.Message}");
+                return;
+            }
+
+            // 전송할 메시지 형식 생성
+            var message = new
+            {
+                command = command,
+                parameters = parameters
+            };
+
+            // 전송할 메시지 형식 로그 출력
+            string messageJson = JsonSerializer.Serialize(message, new JsonSerializerOptions { WriteIndented = true });
+            Log($"전송할 메시지 형식:\n{messageJson}");
+
+            await overlay_gpt.Services.WebSocketManager.Instance.SendMessageAsync(command, parameters);
+            Log($"메시지 전송 완료: command={command}");
+            
+            // 입력 필드 초기화
+            CommandTextBox.Clear();
+            ParameterTextBox.Clear();
+        }
+        catch (Exception ex)
+        {
+            Log($"메시지 전송 중 오류 발생: {ex.Message}");
+        }
     }
 } 
