@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Runtime.InteropServices;
+using Microsoft.AspNetCore.SignalR;
 
 namespace overlay_gpt.Network;
 
@@ -11,6 +12,7 @@ public class WebSocketServer
     private IHost? _host;
     private readonly int _port;
     private bool _isRunning;
+    private SocketIOConnection? _socketIOConnection;
 
     [DllImport("kernel32.dll")]
     private static extern bool AllocConsole();
@@ -20,6 +22,15 @@ public class WebSocketServer
         _port = port;
         AllocConsole(); // 콘솔 창 생성
         Console.WriteLine($"웹소켓 서버가 초기화되었습니다. (포트: {port})");
+    }
+
+    public SocketIOConnection GetSocketIOConnection()
+    {
+        if (_socketIOConnection == null)
+        {
+            throw new InvalidOperationException("SocketIOConnection이 초기화되지 않았습니다.");
+        }
+        return _socketIOConnection;
     }
 
     public async Task StartAsync()
@@ -81,7 +92,11 @@ public class WebSocketServer
                     });
 
                     // SocketIOConnection 서비스 등록
-                    services.AddSingleton<SocketIOConnection>();
+                    services.AddSingleton<SocketIOConnection>(sp => 
+                    {
+                        var hubContext = sp.GetRequiredService<IHubContext<ChatHub>>();
+                        return new SocketIOConnection(hubContext);
+                    });
                 })
                 .Build();
 
@@ -89,8 +104,8 @@ public class WebSocketServer
             _isRunning = true;
             
             // Socket.IO 연결 시작
-            var socketIOConnection = _host.Services.GetRequiredService<SocketIOConnection>();
-            await socketIOConnection.ConnectAsync();
+            _socketIOConnection = _host.Services.GetRequiredService<SocketIOConnection>();
+            await _socketIOConnection.ConnectAsync();
             
             Console.WriteLine("==========================================");
             Console.WriteLine($"웹소켓 서버가 시작되었습니다.");

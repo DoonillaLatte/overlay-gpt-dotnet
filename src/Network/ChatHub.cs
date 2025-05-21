@@ -76,6 +76,9 @@ public class ChatHub : Hub
     public async Task SendMessage(object message)
     {
         await _semaphore.WaitAsync();
+        Console.WriteLine("==========================================");
+        Console.WriteLine("SendMessage 호출됨");
+        Console.WriteLine("==========================================");
         try
         {
             // 메시지 로깅
@@ -178,42 +181,6 @@ public class ChatHub : Hub
                     await _socketIOConnection.SendMessageAsync(singleRequestJson);
 
                     response = new { status = "success", message = "프롬프트가 Flask 서버로 전송되었습니다." };
-                    break;
-
-                case "response_single_generated_response":
-                    if (!jsonElement.TryGetProperty("chat_id", out var responseChatIdElement) ||
-                        !jsonElement.TryGetProperty("response", out var responseElement) ||
-                        !jsonElement.TryGetProperty("status", out var statusElement))
-                    {
-                        throw new InvalidOperationException("필수 필드가 누락되었습니다: chat_id, message 또는 status");
-                    }
-
-                    int responseChatId = responseChatIdElement.GetInt32();
-                    string responseText = responseElement.GetString() ?? throw new InvalidOperationException("message 값이 null입니다.");
-                    string responseStatus = statusElement.GetString() ?? throw new InvalidOperationException("status 값이 null입니다.");
-
-                    // Vue로 전달할 메시지 형식 생성
-                    var displayTextMessage = new
-                    {
-                        command = "display_text",
-                        chat_id = responseChatId,
-                        current_program = jsonElement.TryGetProperty("current_program", out var currProgElement) 
-                            ? JsonSerializer.Deserialize<ProgramInfo>(currProgElement.GetRawText()) ?? new ProgramInfo()
-                            : new ProgramInfo(),
-                        target_program = jsonElement.TryGetProperty("target_program", out var targetProgElement) 
-                            ? JsonSerializer.Deserialize<ProgramInfo>(targetProgElement.GetRawText()) ?? new ProgramInfo()
-                            : new ProgramInfo(),
-                        texts = new[]
-                        {
-                            new
-                            {
-                                type = "text_plain",
-                                content = responseText
-                            }
-                        }
-                    };
-
-                    response = displayTextMessage;
                     break;
 
                 default:
