@@ -34,12 +34,28 @@ namespace overlay_gpt.Network
             
             _socket.On("message_response", response =>
             {
-                var message = response.GetValue<string>();
                 Console.WriteLine("==========================================");
-                Console.WriteLine("Flask로부터 받은 메시지:");
-                Console.WriteLine(message);
+                Console.WriteLine("message_response 이벤트 수신됨");
+                Console.WriteLine($"수신 시간: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                Console.WriteLine($"이벤트 타입: message_response");
+                Console.WriteLine($"전체 응답 데이터: {response}");
+                var message = response.GetValue<string>();
+                Console.WriteLine($"파싱된 메시지: {message}");
                 Console.WriteLine("==========================================");
                 OnMessageReceived?.Invoke(this, message);
+            });
+
+            _socket.On("prompt_response", response =>
+            {
+                Console.WriteLine("==========================================");
+                Console.WriteLine("prompt_response 이벤트 수신됨");
+                Console.WriteLine($"수신 시간: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                Console.WriteLine($"이벤트 타입: prompt_response");
+                Console.WriteLine($"전체 응답 데이터: {response}");
+                var data = response.GetValue<object>();
+                Console.WriteLine($"파싱된 데이터: {data}");
+                Console.WriteLine("==========================================");
+                OnMessageReceived?.Invoke(this, JsonSerializer.Serialize(data));
             });
 
             _socket.OnConnected += (sender, e) =>

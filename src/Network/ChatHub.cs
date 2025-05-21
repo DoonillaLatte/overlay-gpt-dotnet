@@ -128,11 +128,11 @@ public class ChatHub : Hub
                             ? descriptionElement.GetString() ?? string.Empty 
                             : string.Empty,
                         CurrentProgram = jsonElement.TryGetProperty("current_program", out var currentProgramElement) 
-                            ? JsonSerializer.Deserialize<ProgramInfo>(currentProgramElement.GetRawText()) 
-                            : null,
+                            ? JsonSerializer.Deserialize<ProgramInfo>(currentProgramElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo(),
                         TargetProgram = jsonElement.TryGetProperty("target_program", out var targetProgramElement) 
-                            ? JsonSerializer.Deserialize<ProgramInfo>(targetProgramElement.GetRawText()) 
-                            : null
+                            ? JsonSerializer.Deserialize<ProgramInfo>(targetProgramElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo()
                     };
 
                     // Flask 서버로 전송
@@ -144,6 +144,76 @@ public class ChatHub : Hub
                     await _socketIOConnection.SendMessageAsync(flaskRequestJson);
 
                     response = new { status = "success", message = "프롬프트가 Flask 서버로 전송되었습니다." };
+                    break;
+
+                case "request_single_generated_response":
+                    var singleResponseRequest = new FlaskRequest
+                    {
+                        ChatId = jsonElement.TryGetProperty("chat_id", out var singleChatIdElement) 
+                            ? singleChatIdElement.GetInt32() 
+                            : 0,
+                        Prompt = jsonElement.TryGetProperty("prompt", out var singlePromptElement) 
+                            ? singlePromptElement.GetString() ?? string.Empty 
+                            : string.Empty,
+                        RequestType = jsonElement.TryGetProperty("request_type", out var singleReqTypeElement) 
+                            ? singleReqTypeElement.GetInt32() 
+                            : 1,
+                        Description = jsonElement.TryGetProperty("description", out var singleDescElement) 
+                            ? singleDescElement.GetString() ?? string.Empty 
+                            : string.Empty,
+                        CurrentProgram = jsonElement.TryGetProperty("current_program", out var singleCurrProgElement) 
+                            ? JsonSerializer.Deserialize<ProgramInfo>(singleCurrProgElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo(),
+                        TargetProgram = jsonElement.TryGetProperty("target_program", out var singleTargetProgElement) 
+                            ? JsonSerializer.Deserialize<ProgramInfo>(singleTargetProgElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo()
+                    };
+
+                    // Flask 서버로 전송
+                    string singleRequestJson = JsonSerializer.Serialize(singleResponseRequest, new JsonSerializerOptions { WriteIndented = true });
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("Flask로 보내는 메시지:");
+                    Console.WriteLine(singleRequestJson);
+                    Console.WriteLine("==========================================");
+                    await _socketIOConnection.SendMessageAsync(singleRequestJson);
+
+                    response = new { status = "success", message = "프롬프트가 Flask 서버로 전송되었습니다." };
+                    break;
+
+                case "response_single_generated_response":
+                    if (!jsonElement.TryGetProperty("chat_id", out var responseChatIdElement) ||
+                        !jsonElement.TryGetProperty("response", out var responseElement) ||
+                        !jsonElement.TryGetProperty("status", out var statusElement))
+                    {
+                        throw new InvalidOperationException("필수 필드가 누락되었습니다: chat_id, message 또는 status");
+                    }
+
+                    int responseChatId = responseChatIdElement.GetInt32();
+                    string responseText = responseElement.GetString() ?? throw new InvalidOperationException("message 값이 null입니다.");
+                    string responseStatus = statusElement.GetString() ?? throw new InvalidOperationException("status 값이 null입니다.");
+
+                    // Vue로 전달할 메시지 형식 생성
+                    var displayTextMessage = new
+                    {
+                        command = "display_text",
+                        chat_id = responseChatId,
+                        current_program = jsonElement.TryGetProperty("current_program", out var currProgElement) 
+                            ? JsonSerializer.Deserialize<ProgramInfo>(currProgElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo(),
+                        target_program = jsonElement.TryGetProperty("target_program", out var targetProgElement) 
+                            ? JsonSerializer.Deserialize<ProgramInfo>(targetProgElement.GetRawText()) ?? new ProgramInfo()
+                            : new ProgramInfo(),
+                        texts = new[]
+                        {
+                            new
+                            {
+                                type = "text_plain",
+                                content = responseText
+                            }
+                        }
+                    };
+
+                    response = displayTextMessage;
                     break;
 
                 default:
