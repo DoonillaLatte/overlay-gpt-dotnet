@@ -112,7 +112,7 @@ namespace overlay_gpt.Network
                                         new
                                         {
                                             type = "text_plain",
-                                            content = responseText
+                                            content = currentProgram.context
                                         }
                                     }
                                 };

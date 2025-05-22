@@ -33,6 +33,15 @@ public class WebSocketServer
         return _socketIOConnection;
     }
 
+    public IHubContext<ChatHub> GetHubContext()
+    {
+        if (_host == null)
+        {
+            throw new InvalidOperationException("서버가 초기화되지 않았습니다.");
+        }
+        return _host.Services.GetRequiredService<IHubContext<ChatHub>>();
+    }
+
     public async Task StartAsync()
     {
         if (_isRunning)

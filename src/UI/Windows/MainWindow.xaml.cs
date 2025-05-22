@@ -13,6 +13,7 @@ using System.Windows.Automation;
 using overlay_gpt;
 using overlay_gpt.Network;
 using Microsoft.AspNetCore.SignalR;
+using System.Text.Json;
 
 namespace overlay_gpt 
 {
@@ -69,15 +70,57 @@ namespace overlay_gpt
             };
         }
 
-        private void ShowOverlay()
+        private async void ShowOverlay()
         {
-            var element = AutomationElement.FocusedElement;
-            var reader = ContextReaderFactory.CreateReader(element);
-            LogWindow.Instance.Log($"Reader Type: {reader.GetType().Name}");
-            var result = reader.GetSelectedTextWithStyle();
-            string context = result.SelectedText;
-            
-            LogWindow.Instance.Log($"Selected Text: {context}");
+            try
+            {
+                var element = AutomationElement.FocusedElement;
+                var reader = ContextReaderFactory.CreateReader(element);
+                LogWindow.Instance.Log($"Reader Type: {reader.GetType().Name}");
+                var result = reader.GetSelectedTextWithStyle();
+                string context = result.SelectedText;
+                
+                LogWindow.Instance.Log($"Selected Text: {context}");
+
+                var displayTextMessage = new
+                {
+                    command = "display_text",
+                    chat_id = 1,
+                    current_program = new
+                    {
+                        file_name = "",
+                        program_type = "",
+                        context = context
+                    },
+                    target_program = new
+                    {
+                        file_name = "",
+                        program_type = "",
+                        context = ""
+                    },
+                    texts = new[]
+                    {
+                        new
+                        {
+                            type = "text_plain",
+                            content = context
+                        }
+                    }
+                };
+
+                Console.WriteLine("==========================================");
+                Console.WriteLine("Vue로 메시지 전송 중...");
+                Console.WriteLine($"전송 시간: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                Console.WriteLine($"전송할 메시지: {JsonSerializer.Serialize(displayTextMessage, new JsonSerializerOptions { WriteIndented = true })}");
+                await _webSocketServer.GetHubContext().Clients.All.SendAsync("ReceiveMessage", displayTextMessage);
+                Console.WriteLine("Vue로 메시지 전송 완료");
+                Console.WriteLine("==========================================");
+            }
+            catch (Exception ex)
+            {
+                LogWindow.Instance.Log($"오류 발생: {ex.Message}");
+                Console.WriteLine($"오류 발생: {ex.Message}");
+            }
         }
 
         protected override void OnSourceInitialized(EventArgs e)
