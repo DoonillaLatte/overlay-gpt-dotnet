@@ -4,6 +4,14 @@ using System.Windows.Media;
 using System.Windows.Controls;
 using System.Text.Json;
 using System.Threading;
+using overlay_gpt.Network;
+using overlay_gpt.Network.Models;
+using overlay_gpt.Network.Models.Vue;
+using overlay_gpt.Network.Models.Common;
+using overlay_gpt.Services;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace overlay_gpt;
 
@@ -12,6 +20,8 @@ public partial class LogWindow : Window
     private static LogWindow? _instance;
     private static readonly SemaphoreSlim _instanceSemaphore = new SemaphoreSlim(1, 1);
     private static readonly SemaphoreSlim _logSemaphore = new SemaphoreSlim(1, 1);
+    private WithFlaskAsClient? _flaskClient;
+    private WithVueAsHost? _vueHost;
 
     public static LogWindow Instance
     {
@@ -45,6 +55,13 @@ public partial class LogWindow : Window
     private LogWindow()
     {
         InitializeComponent();
+    }
+
+    public void SetServers(WithFlaskAsClient flaskClient, WithVueAsHost vueHost)
+    {
+        _flaskClient = flaskClient;
+        _vueHost = vueHost;
+        Log("서버 연결이 설정되었습니다.");
     }
 
     private void ApplyFontStyle(Run run, Dictionary<string, object> styleAttributes)
@@ -252,14 +269,10 @@ public partial class LogWindow : Window
     {
         try
         {
-            string command = CommandTextBox.Text.Trim();
             string parameterText = ParameterTextBox.Text.Trim();
-
-            if (string.IsNullOrWhiteSpace(command))
-            {
-                Log("Command를 입력해주세요.");
-                return;
-            }
+            string targetServer = (ServerComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Flask";
+            Log($"선택된 서버: {targetServer}");
+            Log($"Flask 클라이언트 상태: {(_flaskClient != null ? "초기화됨" : "null")}");
 
             if (string.IsNullOrWhiteSpace(parameterText))
             {
@@ -268,10 +281,10 @@ public partial class LogWindow : Window
             }
 
             // Parameter를 JSON으로 파싱
-            object? parameters;
+            JsonElement parameters;
             try
             {
-                parameters = JsonSerializer.Deserialize<object>(parameterText);
+                parameters = JsonSerializer.Deserialize<JsonElement>(parameterText);
             }
             catch (Exception ex)
             {
@@ -279,19 +292,47 @@ public partial class LogWindow : Window
                 return;
             }
 
-            // 전송할 메시지 형식 생성
-            var message = new
+            // command가 파라미터에 포함되어 있는지 확인
+            if (!parameters.TryGetProperty("command", out var commandElement))
             {
-                command = command,
-                parameters = parameters
-            };
+                Log("Parameter에 'command' 필드가 없습니다.");
+                return;
+            }
+
+            string command = commandElement.GetString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                Log("Command가 비어있습니다.");
+                return;
+            }
 
             // 전송할 메시지 형식 로그 출력
-            string messageJson = JsonSerializer.Serialize(message, new JsonSerializerOptions { WriteIndented = true });
+            string messageJson = JsonSerializer.Serialize(parameters, new JsonSerializerOptions { WriteIndented = true });
             Log($"전송할 메시지 형식:\n{messageJson}");
+
+            // 선택된 서버에 메시지 전송
+            if (targetServer == "Flask" && _flaskClient != null)
+            {
+                Log("Flask 서버로 메시지 전송 시작...");
+                try 
+                {
+                    await _flaskClient.SendMessageAsync(parameters);
+                    Log("Flask 서버로 메시지 전송 완료");
+                }
+                catch (Exception ex)
+                {
+                    Log($"Flask 서버로 메시지 전송 중 오류 발생: {ex.Message}");
+                    throw;
+                }
+            }
+            else if (targetServer == "Vue" && _vueHost != null)
+            {
+                Log("Vue 서버로 메시지 전송 시작...");
+                await _vueHost.SendMessageToAll(parameters);
+                Log("Vue 서버로 메시지 전송 완료");
+            }
             
             // 입력 필드 초기화
-            CommandTextBox.Clear();
             ParameterTextBox.Clear();
         }
         catch (Exception ex)
@@ -303,5 +344,112 @@ public partial class LogWindow : Window
     private void SendTestMessageButton_Click(object sender, RoutedEventArgs e)
     {
         _ = SendTestMessageButton_ClickAsync(sender, e);
+    }
+
+    private void ShowAllChatsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var chatDataList = ChatDataManager.Instance.GetAllChatData();
+        
+        if (chatDataList.Count == 0)
+        {
+            Log("등록된 채팅 데이터가 없습니다.");
+            return;
+        }
+
+        Log($"총 {chatDataList.Count}개의 채팅 데이터가 있습니다:");
+        
+        foreach (var chatData in chatDataList)
+        {
+            var styleAttributes = new Dictionary<string, object>
+            {
+                { "FontWeight", 700.0 },  // Bold
+                { "ForegroundColor", 0x0000FF }  // Blue
+            };
+            
+            LogWithStyle($"Chat ID: {chatData.ChatId}", styleAttributes);
+            Log($"Timestamp: {chatData.GeneratedTimestamp}");
+            Log($"Current Program: {chatData.CurrentProgram.Type} - {chatData.CurrentProgram.Context}");
+            if (chatData.TargetProgram != null)
+            {
+                Log($"Target Program: {chatData.TargetProgram.Type} - {chatData.TargetProgram.Context}");
+            }
+            Log("----------------------------------------");
+        }
+    }
+
+    private void ParameterTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ParameterTypeComboBox.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content != null && ParameterTextBox != null)
+        {
+            string template = selectedItem.Content.ToString() switch
+            {
+                "DisplayTextMessage" => JsonSerializer.Serialize(new overlay_gpt.Network.Models.Vue.DisplayText
+                {
+                    Command = "display_text",
+                    ChatId = 1,
+                    CurrentProgram = new ProgramInfo
+                    {
+                        Id = 1,
+                        Type = "C#",
+                        Context = "샘플 컨텍스트"
+                    },
+                    TargetProgram = null,
+                    Texts = new List<TextInfo>
+                    {
+                        new TextInfo
+                        {
+                            Type = "text_plain",
+                            Content = "일반 텍스트 메시지입니다."
+                        },
+                        new TextInfo
+                        {
+                            Type = "text_block",
+                            Content = "<b><font size=\"22\">보고서</font></b> <br> <p>샘플 내용입니다.</p>"
+                        },
+                        new TextInfo
+                        {
+                            Type = "table_block",
+                            Content = new List<List<string>>
+                            {
+                                new List<string> { "<b><color=\"blue\">제목</color></b>" },
+                                new List<string> { "내용1" },
+                                new List<string> { "내용2" }
+                            }
+                        },
+                        new TextInfo
+                        {
+                            Type = "code_block",
+                            Content = "int a = 0;\nConsole.WriteLine(a);"
+                        }
+                    }
+                }, new JsonSerializerOptions { WriteIndented = true }),
+                "ProgramInfo" => JsonSerializer.Serialize(new
+                {
+                    id = 1,
+                    type = "C#",
+                    context = "샘플 컨텍스트"
+                }, new JsonSerializerOptions { WriteIndented = true }),
+                "Custom JSON" => "{\n    // 여기에 커스텀 JSON을 입력하세요\n}",
+                _ => "{}"
+            };
+
+            ParameterTextBox.Text = template;
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        
+        // 서버 연결 종료
+        if (_flaskClient != null)
+        {
+            _ = _flaskClient.DisconnectAsync();
+        }
+        
+        if (_vueHost != null)
+        {
+            _ = _vueHost.StopAsync();
+        }
     }
 } 
