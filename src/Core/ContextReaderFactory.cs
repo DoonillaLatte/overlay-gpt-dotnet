@@ -2,6 +2,7 @@ using System.Windows.Automation;
 using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
 using Microsoft.VisualBasic;
+using System.Diagnostics;
 
 namespace overlay_gpt
 {
@@ -10,19 +11,23 @@ namespace overlay_gpt
         public static IContextReader CreateReader(AutomationElement element)
         {
             if (element == null)
+            {
+                Console.WriteLine("element가 null입니다.");
                 return new TextPatternContextReader();
+            }
                 
             // Excel 리더 추가
-            /*
             try
             {   
-                return new ExcelContextReader();
+                Console.WriteLine("ExcelContextReader 생성 시도");
+                var reader = new ExcelContextReader();
+                Console.WriteLine("ExcelContextReader 생성 성공");
+                return reader;
             }
-            catch
+            catch(Exception e)
             {
-                // Excel이 실행 중이 아닌 경우 무시
+                Console.WriteLine($"Excel 관련 오류 발생: {e.Message}");
             }
-            */
                 
             // TextBox나 ValueBox일 때 포커스 여부 확인
             if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 

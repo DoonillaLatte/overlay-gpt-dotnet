@@ -14,18 +14,12 @@ namespace overlay_gpt.Services
             _chatDataManager = ChatDataManager.Instance;
         }
 
-        public DisplayText ProcessSelectedText(string selectedText, string fileName = "", string programType = "")
+        public DisplayText ProcessSelectedText(string selectedText, ProgramInfoCommon programInfo)
         {
             var chatData = new ChatData
             {
-                ChatId = -1,
                 GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                CurrentProgram = new ProgramInfoCommon
-                {
-                    Id = -1,
-                    Type = programType,
-                    Context = selectedText
-                },
+                CurrentProgram = programInfo,
                 TargetProgram = null
             };
 
@@ -33,13 +27,7 @@ namespace overlay_gpt.Services
 
             return new DisplayText
             {
-                ChatId = chatData.ChatId,
-                CurrentProgram = new ProgramInfo
-                {
-                    Id = -1,
-                    Type = programType,
-                    Context = selectedText
-                },
+                CurrentProgram = programInfo,
                 TargetProgram = null,
                 Texts = new List<TextInfo> {}
             };
