@@ -13,16 +13,15 @@ namespace overlay_gpt
                 return new TextPatternContextReader();
                 
             // Excel 리더 추가
-            /*
             try
             {   
                 return new ExcelContextReader();
             }
-            catch
+            catch(Exception e)
             {
-                // Excel이 실행 중이 아닌 경우 무시
+                Console.WriteLine("Excel 관련 오류 발생");
+                Console.WriteLine(e.Message);
             }
-            */
                 
             // TextBox나 ValueBox일 때 포커스 여부 확인
             if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 
