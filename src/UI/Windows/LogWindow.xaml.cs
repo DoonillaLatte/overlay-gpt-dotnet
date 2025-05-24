@@ -368,10 +368,26 @@ public partial class LogWindow : Window
             
             LogWithStyle($"Chat ID: {chatData.ChatId}", styleAttributes);
             Log($"Timestamp: {chatData.GeneratedTimestamp}");
-            Log($"Current Program: {chatData.CurrentProgram.Type} - {chatData.CurrentProgram.Context}");
+            
+            // Current Program 정보 출력
+            Log("Current Program:");
+            Log($"  Context: {chatData.CurrentProgram.Context}");
+            Log($"  FileId: {chatData.CurrentProgram.FileId}");
+            Log($"  VolumeId: {chatData.CurrentProgram.VolumeId}");
+            Log($"  FileType: {chatData.CurrentProgram.FileType}");
+            Log($"  FileName: {chatData.CurrentProgram.FileName}");
+            Log($"  FilePath: {chatData.CurrentProgram.FilePath}");
+
+            // Target Program 정보 출력
             if (chatData.TargetProgram != null)
             {
-                Log($"Target Program: {chatData.TargetProgram.Type} - {chatData.TargetProgram.Context}");
+                Log("Target Program:");
+                Log($"  Context: {chatData.TargetProgram.Context}");
+                Log($"  FileId: {chatData.TargetProgram.FileId}");
+                Log($"  VolumeId: {chatData.TargetProgram.VolumeId}");
+                Log($"  FileType: {chatData.TargetProgram.FileType}");
+                Log($"  FileName: {chatData.TargetProgram.FileName}");
+                Log($"  FilePath: {chatData.TargetProgram.FilePath}");
             }
             Log("----------------------------------------");
         }
@@ -389,8 +405,6 @@ public partial class LogWindow : Window
                     ChatId = 1,
                     CurrentProgram = new ProgramInfo
                     {
-                        Id = 1,
-                        Type = "C#",
                         Context = "샘플 컨텍스트"
                     },
                     TargetProgram = null,

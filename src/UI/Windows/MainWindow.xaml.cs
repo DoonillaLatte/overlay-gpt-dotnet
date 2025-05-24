@@ -95,7 +95,17 @@ namespace overlay_gpt
                 
                 LogWindow.Instance.Log($"Selected Text: {context}");
 
-                var displayTextMessage = _textProcessingService.ProcessSelectedText(context);
+                // 파일 정보 가져오기
+                var fileInfo = reader.GetFileInfo();
+                var displayTextMessage = _textProcessingService.ProcessSelectedText(context, new Network.Models.Common.ProgramInfo
+                {
+                    Context = context,
+                    FileId = fileInfo.FileId,
+                    VolumeId = fileInfo.VolumeId,
+                    FileType = fileInfo.FileType,
+                    FileName = fileInfo.FileName,
+                    FilePath = fileInfo.FilePath
+                });
 
                 Console.WriteLine("==========================================");
                 Console.WriteLine("Vue로 메시지 전송 중...");
