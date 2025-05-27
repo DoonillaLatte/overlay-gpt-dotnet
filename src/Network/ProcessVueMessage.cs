@@ -109,12 +109,10 @@ namespace overlay_gpt.Network
 
                 var flaskRequest = new RequestSingleGeneratedResponse
                 {
-                    Command = "request_single_generated_response",
                     ChatId = vueRequest.ChatId,
                     Prompt = vueRequest.Prompt,
                     GeneratedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                     RequestType = 1, // 기본값 설정
-                    Description = vueRequest.Prompt, // 프롬프트를 설명으로 사용
                     CurrentProgram = vueRequest.CurrentProgram,
                     TargetProgram = vueRequest.TargetProgram
                 };

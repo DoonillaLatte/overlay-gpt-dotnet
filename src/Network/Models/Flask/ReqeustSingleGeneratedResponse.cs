@@ -6,7 +6,7 @@ namespace overlay_gpt.Network.Models.Flask
     public class RequestSingleGeneratedResponse
     {
         [JsonPropertyName("command")]
-        public string Command { get; set; } = "request_single_generated_response";
+        public string Command { get; set; } = "request_prompt";
 
         [JsonPropertyName("chat_id")]
         public int ChatId { get; set; }
@@ -19,9 +19,6 @@ namespace overlay_gpt.Network.Models.Flask
 
         [JsonPropertyName("request_type")]
         public int RequestType { get; set; }
-
-        [JsonPropertyName("description")]
-        public string Description { get; set; } = string.Empty;
 
         [JsonPropertyName("current_program")]
         public ProgramInfo CurrentProgram { get; set; } = new();
