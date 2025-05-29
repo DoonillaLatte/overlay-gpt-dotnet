@@ -300,7 +300,7 @@ namespace overlay_gpt
                 if (excelProcesses.Length == 0)
                 {
                     Console.WriteLine("실행 중인 Excel 애플리케이션을 찾을 수 없습니다.");
-                    return (string.Empty, new Dictionary<string, object>());
+                    throw new InvalidOperationException("Excel is not running");
                 }
 
                 // 활성화된 Excel 창 찾기

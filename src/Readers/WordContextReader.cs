@@ -1,0 +1,390 @@
+using System;
+using System.Collections.Generic;
+using System.Windows.Automation;
+using System.Windows.Automation.Text;
+using Microsoft.Office.Interop.Word;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+using System.IO;
+
+namespace overlay_gpt
+{
+    public class WordContextReader : BaseContextReader
+    {
+        private Application? _wordApp;
+        private Document? _document;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("oleaut32.dll")]
+        private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
+
+        [DllImport("ole32.dll")]
+        private static extern int CLSIDFromProgID([MarshalAs(UnmanagedType.LPWStr)] string lpszProgID, out Guid pclsid);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandle(
+            IntPtr hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint dwFileAttributes;
+            public FILETIME ftCreationTime;
+            public FILETIME ftLastAccessTime;
+            public FILETIME ftLastWriteTime;
+            public uint dwVolumeSerialNumber;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
+            public uint nNumberOfLinks;
+            public uint nFileIndexHigh;
+            public uint nFileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint dwLowDateTime;
+            public uint dwHighDateTime;
+        }
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+
+        private static object GetActiveObject(string progID)
+        {
+            Guid clsid;
+            CLSIDFromProgID(progID, out clsid);
+            object obj;
+            GetActiveObject(ref clsid, IntPtr.Zero, out obj);
+            return obj;
+        }
+
+        private (ulong FileId, uint VolumeId)? GetFileId(string filePath)
+        {
+            try
+            {
+                if (!File.Exists(filePath))
+                    return null;
+
+                IntPtr handle = CreateFile(
+                    filePath,
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    0,
+                    IntPtr.Zero);
+
+                if (handle.ToInt64() == -1)
+                    return null;
+
+                try
+                {
+                    BY_HANDLE_FILE_INFORMATION fileInfo;
+                    if (GetFileInformationByHandle(handle, out fileInfo))
+                    {
+                        ulong fileId = ((ulong)fileInfo.nFileIndexHigh << 32) | fileInfo.nFileIndexLow;
+                        return (fileId, fileInfo.dwVolumeSerialNumber);
+                    }
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"파일 ID 가져오기 오류: {ex.Message}");
+            }
+            return null;
+        }
+
+        private string GetStyledText(string text, Dictionary<string, object> styleAttributes)
+        {
+            string result = text;
+            if (styleAttributes.ContainsKey("UnderlineStyle") && styleAttributes["UnderlineStyle"]?.ToString() == "Single")
+                result = $"<u>{result}</u>";
+            if (styleAttributes.ContainsKey("FontWeight") && styleAttributes["FontWeight"]?.ToString() == "Bold")
+                result = $"<b>{result}</b>";
+            if (styleAttributes.ContainsKey("FontItalic") && Convert.ToBoolean(styleAttributes["FontItalic"]))
+                result = $"<i>{result}</i>";
+            if (styleAttributes.ContainsKey("FontStrikethrough") && Convert.ToBoolean(styleAttributes["FontStrikethrough"]))
+                result = $"<s>{result}</s>";
+            return result;
+        }
+
+        private int ConvertColorToRGB(int bgrColor)
+        {
+            int r = bgrColor & 0xFF;
+            int g = (bgrColor >> 8) & 0xFF;
+            int b = (bgrColor >> 16) & 0xFF;
+            return (r << 16) | (g << 8) | b;
+        }
+
+        private string GetTextStyleString(Dictionary<string, object> styleAttributes)
+        {
+            var styleList = new List<string>();
+            
+            if (styleAttributes.ContainsKey("FontName"))
+            {
+                string fontName = styleAttributes["FontName"]?.ToString() ?? string.Empty;
+                if (!string.IsNullOrEmpty(fontName) && fontName != "Calibri" && fontName != "Arial" && fontName != "맑은 고딕")
+                {
+                    styleList.Add($"font-family: {fontName}");
+                }
+            }
+            
+            if (styleAttributes.ContainsKey("FontSize"))
+            {
+                double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
+                if (fontSize != 11)
+                {
+                    styleList.Add($"font-size: {fontSize}pt");
+                }
+            }
+
+            if (styleAttributes.ContainsKey("ForegroundColor"))
+            {
+                int fgColor = Convert.ToInt32(styleAttributes["ForegroundColor"]);
+                if (fgColor != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(fgColor);
+                    string hexColor = $"#{rgbColor:X6}";
+                    styleList.Add($"color: {hexColor}");
+                }
+            }
+
+            if (styleAttributes.ContainsKey("BackgroundColor"))
+            {
+                int bgColor = Convert.ToInt32(styleAttributes["BackgroundColor"]);
+                if (bgColor != 16777215)
+                {
+                    int rgbColor = ConvertColorToRGB(bgColor);
+                    string hexColor = $"#{rgbColor:X6}";
+                    styleList.Add($"background-color: {hexColor}");
+                }
+            }
+
+            return string.Join("; ", styleList);
+        }
+
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        {
+            try
+            {
+                Console.WriteLine("Word 데이터 읽기 시작...");
+
+                var wordProcesses = Process.GetProcessesByName("WINWORD");
+                if (wordProcesses.Length == 0)
+                {
+                    Console.WriteLine("실행 중인 Word 애플리케이션을 찾을 수 없습니다.");
+                    throw new InvalidOperationException("Word is not running");
+                }
+
+                Process? activeWordProcess = null;
+                foreach (var process in wordProcesses)
+                {
+                    if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowTitle.Length > 0)
+                    {
+                        if (process.MainWindowHandle == GetForegroundWindow())
+                        {
+                            activeWordProcess = process;
+                            Console.WriteLine("이 Word 창이 현재 활성화되어 있습니다.");
+                        }
+                    }
+                }
+
+                if (activeWordProcess == null)
+                {
+                    Console.WriteLine("활성화된 Word 창을 찾을 수 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>());
+                }
+
+                try
+                {
+                    _wordApp = (Application)GetActiveObject("Word.Application");
+                    _document = _wordApp.ActiveDocument;
+
+                    if (_document == null)
+                    {
+                        Console.WriteLine("활성 문서를 찾을 수 없습니다.");
+                        return (string.Empty, new Dictionary<string, object>());
+                    }
+
+                    var selection = _wordApp.Selection;
+                    if (selection == null)
+                    {
+                        Console.WriteLine("선택된 텍스트가 없습니다.");
+                        return (string.Empty, new Dictionary<string, object>());
+                    }
+
+                    string selectedText = selection.Text;
+                    var styleAttributes = new Dictionary<string, object>();
+                    var styledTextBuilder = new StringBuilder();
+
+                    // 선택된 텍스트의 각 부분에 대해 스타일 정보 수집
+                    var range = selection.Range;
+                    var start = range.Start;
+                    var end = range.End;
+
+                    Dictionary<string, object>? currentStyle = null;
+                    var currentTextBuilder = new StringBuilder();
+
+                    for (int i = start; i < end; i++)
+                    {
+                        var charRange = _document.Range(i, i + 1);
+                        var charStyle = new Dictionary<string, object>
+                        {
+                            ["FontName"] = charRange.Font.Name,
+                            ["FontSize"] = charRange.Font.Size,
+                            ["FontWeight"] = charRange.Font.Bold == -1 ? "Bold" : "Normal",
+                            ["FontItalic"] = charRange.Font.Italic == -1,
+                            ["UnderlineStyle"] = charRange.Font.Underline == WdUnderline.wdUnderlineSingle ? "Single" : "None",
+                            ["ForegroundColor"] = charRange.Font.Color,
+                            ["BackgroundColor"] = charRange.Shading.BackgroundPatternColor
+                        };
+
+                        string currentChar = charRange.Text;
+
+                        // 줄넘김 처리
+                        if (currentChar == "\r" || currentChar == "\n")
+                        {
+                            // 현재까지의 텍스트를 스타일과 함께 추가
+                            if (currentStyle != null && currentTextBuilder.Length > 0)
+                            {
+                                string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
+                                string styleString = GetTextStyleString(currentStyle);
+                                if (!string.IsNullOrEmpty(styleString))
+                                {
+                                    styledText = $"<span style='{styleString}'>{styledText}</span>";
+                                }
+                                styledTextBuilder.Append(styledText);
+                                currentTextBuilder.Clear();
+                            }
+                            styledTextBuilder.Append("<br>");
+                            continue;
+                        }
+
+                        if (currentStyle == null)
+                        {
+                            currentStyle = charStyle;
+                            currentTextBuilder.Append(currentChar);
+                        }
+                        else if (AreStylesEqual(currentStyle, charStyle))
+                        {
+                            currentTextBuilder.Append(currentChar);
+                        }
+                        else
+                        {
+                            // 현재까지의 텍스트를 스타일과 함께 추가
+                            string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
+                            string styleString = GetTextStyleString(currentStyle);
+                            if (!string.IsNullOrEmpty(styleString))
+                            {
+                                styledText = $"<span style='{styleString}'>{styledText}</span>";
+                            }
+                            styledTextBuilder.Append(styledText);
+
+                            // 새로운 스타일로 시작
+                            currentStyle = charStyle;
+                            currentTextBuilder.Clear();
+                            currentTextBuilder.Append(currentChar);
+                        }
+                    }
+
+                    // 마지막 텍스트 처리
+                    if (currentStyle != null && currentTextBuilder.Length > 0)
+                    {
+                        string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
+                        string styleString = GetTextStyleString(currentStyle);
+                        if (!string.IsNullOrEmpty(styleString))
+                        {
+                            styledText = $"<span style='{styleString}'>{styledText}</span>";
+                        }
+                        styledTextBuilder.Append(styledText);
+                    }
+
+                    return (styledTextBuilder.ToString(), styleAttributes);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Word COM 연결 오류: {ex.Message}");
+                    return (string.Empty, new Dictionary<string, object>());
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Word 데이터 읽기 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                LogWindow.Instance.Log($"Word 데이터 읽기 오류: {ex.Message}");
+                return (string.Empty, new Dictionary<string, object>());
+            }
+            finally
+            {
+                if (_document != null) Marshal.ReleaseComObject(_document);
+                if (_wordApp != null) Marshal.ReleaseComObject(_wordApp);
+            }
+        }
+
+        public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
+        {
+            try
+            {
+                if (_document == null)
+                    return (null, null, "Word", string.Empty, string.Empty);
+
+                string filePath = _document.FullName;
+                string fileName = _document.Name;
+                
+                // COM 객체를 즉시 해제하지 않고 필요한 정보를 먼저 저장
+                var fileIdInfo = GetFileId(filePath);
+                
+                return (
+                    fileIdInfo?.FileId,
+                    fileIdInfo?.VolumeId,
+                    "Word",
+                    fileName,
+                    filePath
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
+                return (null, null, "Word", string.Empty, string.Empty);
+            }
+        }
+
+        private bool AreStylesEqual(Dictionary<string, object> style1, Dictionary<string, object> style2)
+        {
+            if (style1.Count != style2.Count) return false;
+
+            foreach (var key in style1.Keys)
+            {
+                if (!style2.ContainsKey(key)) return false;
+                if (!style1[key].Equals(style2[key])) return false;
+            }
+
+            return true;
+        }
+    }
+}

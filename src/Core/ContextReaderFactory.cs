@@ -1,8 +1,10 @@
 using System.Windows.Automation;
 using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
+using Word = Microsoft.Office.Interop.Word;
 using Microsoft.VisualBasic;
 using System.Diagnostics;
+using System;
 
 namespace overlay_gpt
 {
@@ -16,13 +18,36 @@ namespace overlay_gpt
                 return new TextPatternContextReader();
             }
                 
+            // Word 리더 추가
+            try
+            {   
+                Console.WriteLine("WordContextReader 생성 시도");
+                var wordReader = new WordContextReader();
+                var (text, _) = wordReader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine("WordContextReader 생성 성공");
+                    return wordReader;
+                }
+                throw new InvalidOperationException("No text selected in Word");
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"Word 관련 오류 발생: {e.Message}");
+            }
+
             // Excel 리더 추가
             try
             {   
                 Console.WriteLine("ExcelContextReader 생성 시도");
                 var reader = new ExcelContextReader();
-                Console.WriteLine("ExcelContextReader 생성 성공");
-                return reader;
+                var (text, _) = reader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine("ExcelContextReader 생성 성공");
+                    return reader;
+                }
+                throw new InvalidOperationException("No text selected in Excel");
             }
             catch(Exception e)
             {

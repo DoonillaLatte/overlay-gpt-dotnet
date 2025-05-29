@@ -51,6 +51,10 @@
     </Reference>
     <Reference Include="System.Runtime.InteropServices.RuntimeInformation" />
     <Reference Include="System.Runtime.InteropServices" />
+    <Reference Include="Microsoft.Office.Interop.Word">
+      <HintPath>lib\Interop.Microsoft.Office.Interop.Word.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
   </ItemGroup>
 
 </Project>
