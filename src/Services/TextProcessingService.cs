@@ -25,11 +25,13 @@ namespace overlay_gpt.Services
 
             _chatDataManager.AddChatData(chatData);
 
+            var textData = new TextData { Type = "text_plain", Content = selectedText };
+
             return new DisplayText
             {
                 CurrentProgram = programInfo,
                 TargetProgram = null,
-                Texts = new List<TextInfo> {}
+                Texts = new List<TextData> { textData }
             };
         }
 

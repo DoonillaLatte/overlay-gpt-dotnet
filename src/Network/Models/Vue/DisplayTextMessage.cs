@@ -9,8 +9,14 @@ namespace overlay_gpt.Network.Models.Vue
         [JsonPropertyName("command")]
         public string Command { get; set; } = "display_text";
 
+        [JsonPropertyName("generated_timestamp")]
+        public string GeneratedTimestamp { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+
         [JsonPropertyName("chat_id")]
-        public int ChatId { get; set; } = 1;
+        public int ChatId { get; set; } = -1;
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
 
         [JsonPropertyName("current_program")]
         public ProgramInfo CurrentProgram { get; set; } = new();
@@ -19,15 +25,6 @@ namespace overlay_gpt.Network.Models.Vue
         public ProgramInfo TargetProgram { get; set; } = new();
 
         [JsonPropertyName("texts")]
-        public List<TextInfo> Texts { get; set; } = new();
-    }
-
-    public class TextInfo
-    {
-        [JsonPropertyName("type")]
-        public string Type { get; set; } = "text_plain";
-
-        [JsonPropertyName("content")]
-        public object Content { get; set; } = string.Empty;
+        public List<TextData> Texts { get; set; } = new();
     }
 } 

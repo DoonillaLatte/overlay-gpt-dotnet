@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using overlay_gpt.Network.Models.Vue;
 using overlay_gpt.Network.Models.Flask;
 using overlay_gpt.Services;
+using overlay_gpt.Network.Models.Common;
 using System.Text.Json;
 
 namespace overlay_gpt.Network
@@ -13,10 +14,10 @@ namespace overlay_gpt.Network
     public class ProcessVueMessage
     {
         private readonly Dictionary<string, Func<JObject, Task>> _commandHandlers;
-        private readonly IHubContext<VueHub> _hubContext;
+        private readonly IHubContext<ChatHub> _hubContext;
         private readonly WithFlaskAsClient _flaskClient;
 
-        public ProcessVueMessage(IHubContext<VueHub> hubContext, WithFlaskAsClient flaskClient)
+        public ProcessVueMessage(IHubContext<ChatHub> hubContext, WithFlaskAsClient flaskClient)
         {
             _hubContext = hubContext;
             _flaskClient = flaskClient;
@@ -107,12 +108,26 @@ namespace overlay_gpt.Network
                     throw new Exception("잘못된 요청 형식입니다.");
                 }
 
-                var flaskRequest = new RequestSingleGeneratedResponse
+                var chatData = ChatDataManager.Instance.GetChatDataById(vueRequest.ChatId);
+                if (chatData == null)
+                {
+                    chatData = new ChatData
+                    {
+                        ChatId = vueRequest.ChatId,
+                        GeneratedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        CurrentProgram = vueRequest.CurrentProgram,
+                        TargetProgram = vueRequest.TargetProgram
+                    };
+                    ChatDataManager.Instance.AddChatData(chatData);
+                    Console.WriteLine($"해당 ChatData가 없어 새로 생성합니다. ID : {vueRequest.ChatId}");
+                }
+
+                var flaskRequest = new RequestPrompt
                 {
                     ChatId = vueRequest.ChatId,
                     Prompt = vueRequest.Prompt,
                     GeneratedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                    RequestType = 1, // 기본값 설정
+                    RequestType = 1,
                     CurrentProgram = vueRequest.CurrentProgram,
                     TargetProgram = vueRequest.TargetProgram
                 };

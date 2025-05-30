@@ -3,7 +3,7 @@ using overlay_gpt.Network.Models.Common;
 
 namespace overlay_gpt.Network.Models.Flask 
 {
-    public class RequestSingleGeneratedResponse
+    public class RequestPrompt
     {
         [JsonPropertyName("command")]
         public string Command { get; set; } = "request_prompt";

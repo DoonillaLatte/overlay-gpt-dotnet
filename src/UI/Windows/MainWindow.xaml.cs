@@ -25,12 +25,14 @@ namespace overlay_gpt
         private WithFlaskAsClient _flaskClient;
         private TextProcessingService _textProcessingService;
 
+        public static MainWindow Instance { get; private set; }
         public WithVueAsHost VueServer => _vueServer;
         public WithFlaskAsClient FlaskClient => _flaskClient;
 
         public MainWindow()
         {
             InitializeComponent();
+            Instance = this;
             
             // Flask 클라이언트 초기화
             _flaskClient = new WithFlaskAsClient();
@@ -97,7 +99,9 @@ namespace overlay_gpt
 
                 // 파일 정보 가져오기
                 var fileInfo = reader.GetFileInfo();
-                var displayTextMessage = _textProcessingService.ProcessSelectedText(context, new Network.Models.Common.ProgramInfo
+                LogWindow.Instance.Log($"File Info - ID: {fileInfo.FileId}, Volume: {fileInfo.VolumeId}, Type: {fileInfo.FileType}, Name: {fileInfo.FileName}, Path: {fileInfo.FilePath}");
+                
+                var programInfo = new Network.Models.Common.ProgramInfo
                 {
                     Context = context,
                     FileId = fileInfo.FileId,
@@ -105,7 +109,11 @@ namespace overlay_gpt
                     FileType = fileInfo.FileType,
                     FileName = fileInfo.FileName,
                     FilePath = fileInfo.FilePath
-                });
+                };
+                
+                LogWindow.Instance.Log($"Program Info - ID: {programInfo.FileId}, Volume: {programInfo.VolumeId}, Type: {programInfo.FileType}, Name: {programInfo.FileName}, Path: {programInfo.FilePath}");
+                
+                var displayTextMessage = _textProcessingService.ProcessSelectedText(context, programInfo);
 
                 Console.WriteLine("==========================================");
                 Console.WriteLine("Vue로 메시지 전송 중...");

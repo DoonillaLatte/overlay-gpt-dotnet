@@ -40,6 +40,7 @@ namespace overlay_gpt.Network
         private SocketIOClient.SocketIO _socket;
         private const string ServerUrl = "http://localhost:5001";
         private const string MessageEvent = "message";
+        private const string MessageResponseEvent = "message_response";
         private const int ReconnectionDelay = 2000;
         private int _reconnectionAttempt = 0;
         private readonly ProcessFlaskMessage _messageProcessor;
@@ -79,8 +80,10 @@ namespace overlay_gpt.Network
                 Console.WriteLine($"에러 발생: {e}");
             };
 
-            _socket.On(MessageEvent, async (response) =>
+            _socket.Off(MessageResponseEvent);
+            _socket.On(MessageResponseEvent, async (response) =>
             {
+                Console.WriteLine($"message_response 이벤트 수신: {response.GetValue<object>()}");
                 await _messageProcessor.ProcessMessage(response);
             });
 

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using SocketIOClient;
 using Newtonsoft.Json.Linq;
+using overlay_gpt.Network.Models.Common;
+using overlay_gpt.Network.Models.Vue;
 
 namespace overlay_gpt.Network
 {
@@ -17,7 +19,8 @@ namespace overlay_gpt.Network
                 { "show_overlay", HandleShowOverlay },
                 { "hide_overlay", HandleHideOverlay },
                 { "update_content", HandleUpdateContent },
-                { "error", HandleError }
+                { "error", HandleError },
+                { "generated_response", HandleGeneratedResponse }
             };
         }
 
@@ -25,10 +28,13 @@ namespace overlay_gpt.Network
         {
             try
             {
-                var jsonData = response.GetValue<JObject>();
+                Console.WriteLine("ProcessMessage 시작");
+                var jsonString = response.GetValue<object>().ToString();
+                var jsonData = JObject.Parse(jsonString);
                 Console.WriteLine($"수신된 메시지: {jsonData}");
                 
                 var command = jsonData["command"]?.ToString();
+                Console.WriteLine($"명령어: {command}");
 
                 if (string.IsNullOrEmpty(command))
                 {
@@ -36,9 +42,13 @@ namespace overlay_gpt.Network
                     return;
                 }
 
+                Console.WriteLine($"사용 가능한 핸들러 목록: {string.Join(", ", _commandHandlers.Keys)}");
+                
                 if (_commandHandlers.TryGetValue(command, out var handler))
                 {
+                    Console.WriteLine($"핸들러 실행: {command}");
                     await handler(jsonData);
+                    Console.WriteLine($"핸들러 실행 완료: {command}");
                 }
                 else
                 {
@@ -48,6 +58,7 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"메시지 처리 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
             }
         }
 
@@ -77,6 +88,66 @@ namespace overlay_gpt.Network
             var errorMessage = data["message"]?.ToString();
             Console.WriteLine($"에러 발생: {errorMessage}");
             // TODO: 실제 에러 처리 로직 구현
+        }
+
+        private async Task HandleGeneratedResponse(JObject data)
+        {
+            try
+            {
+                Console.WriteLine("HandleGeneratedResponse 시작");
+                var chatId = data["chat_id"]?.Value<int>() ?? -1;
+                var title = data["title"]?.ToString();
+                var message = data["message"]?.ToString();
+                var status = data["status"]?.ToString();
+
+                Console.WriteLine($"받은 데이터 - chatId: {chatId}, message: {message}, status: {status}");
+
+                if (string.IsNullOrEmpty(message))
+                {
+                    Console.WriteLine("message가 비어있습니다.");
+                    return;
+                }
+
+                var chatData = Services.ChatDataManager.Instance.GetChatDataById(chatId);
+                if (chatData == null)
+                {
+                    Console.WriteLine($"chat_id {chatId}에 해당하는 ChatData를 찾을 수 없습니다.");
+                    return;
+                }
+
+                if(chatData.Title != title) 
+                {
+                    chatData.Title = title;
+                }
+                chatData.Texts.Add(new TextData { Type = "text_plain", Content = message });
+                Console.WriteLine($"ChatData {chatId}에 메시지가 추가되었습니다.");
+
+                // Vue로 display_text 메시지 전송
+                var displayText = new DisplayText
+                {
+                    ChatId = chatId,
+                    Title = title,
+                    GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    CurrentProgram = chatData.CurrentProgram,
+                    TargetProgram = chatData.TargetProgram,
+                    Texts = new List<TextData> { new TextData { Type = "text_plain", Content = message } }
+                };
+
+                var vueServer = MainWindow.Instance.VueServer;
+                if (vueServer != null)
+                {
+                    await vueServer.SendMessageToAll(displayText);
+                    Console.WriteLine($"Vue로 display_text 메시지 전송 완료: chat_id {chatId}");
+                }
+                else
+                {
+                    Console.WriteLine("Vue 서버가 초기화되지 않았습니다.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"메시지 처리 중 오류 발생: {ex.Message}");
+            }
         }
 
         // 새로운 명령어 핸들러를 추가하는 메서드

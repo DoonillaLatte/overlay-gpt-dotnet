@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Automation;
-using System.Windows.Automation.Text;
 using Microsoft.Office.Interop.Word;
+using WordFont = Microsoft.Office.Interop.Word.Font;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Runtime.InteropServices.ComTypes;
@@ -83,8 +83,13 @@ namespace overlay_gpt
         {
             try
             {
+                Console.WriteLine($"GetFileId 호출 - 파일 경로: {filePath}");
+                
                 if (!File.Exists(filePath))
+                {
+                    Console.WriteLine("파일이 존재하지 않습니다.");
                     return null;
+                }
 
                 IntPtr handle = CreateFile(
                     filePath,
@@ -96,7 +101,10 @@ namespace overlay_gpt
                     IntPtr.Zero);
 
                 if (handle.ToInt64() == -1)
+                {
+                    Console.WriteLine($"CreateFile 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
                     return null;
+                }
 
                 try
                 {
@@ -104,7 +112,14 @@ namespace overlay_gpt
                     if (GetFileInformationByHandle(handle, out fileInfo))
                     {
                         ulong fileId = ((ulong)fileInfo.nFileIndexHigh << 32) | fileInfo.nFileIndexLow;
+                        Console.WriteLine($"파일 ID 정보 가져오기 성공:");
+                        Console.WriteLine($"- FileId: {fileId}");
+                        Console.WriteLine($"- VolumeId: {fileInfo.dwVolumeSerialNumber}");
                         return (fileId, fileInfo.dwVolumeSerialNumber);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"GetFileInformationByHandle 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
                     }
                 }
                 finally
@@ -115,6 +130,7 @@ namespace overlay_gpt
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 ID 가져오기 오류: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
             }
             return null;
         }
@@ -139,6 +155,35 @@ namespace overlay_gpt
             int g = (bgrColor >> 8) & 0xFF;
             int b = (bgrColor >> 16) & 0xFF;
             return (r << 16) | (g << 8) | b;
+        }
+
+        private int GetHighlightColorRGB(int highlightColor)
+        {
+            // 사용자 정의 RGB 색상인 경우 (0xFFFFFF보다 큰 값)
+            if (highlightColor > 0xFFFFFF)
+            {
+                return ConvertColorToRGB(highlightColor);
+            }
+
+            // WdColorIndex 열거형 값에 따른 RGB 색상 매핑
+            switch (highlightColor)
+            {
+                case (int)WdColorIndex.wdYellow: return 0xFFFF00;  // 노랑
+                case (int)WdColorIndex.wdBrightGreen: return 0x00FF00;  // 밝은 초록
+                case (int)WdColorIndex.wdTurquoise: return 0x00FFFF;  // 청록
+                case (int)WdColorIndex.wdPink: return 0xFF00FF;  // 분홍
+                case (int)WdColorIndex.wdBlue: return 0x0000FF;  // 파랑
+                case (int)WdColorIndex.wdRed: return 0xFF0000;  // 빨강
+                case (int)WdColorIndex.wdDarkBlue: return 0x000080;  // 진한 파랑
+                case (int)WdColorIndex.wdTeal: return 0x008080;  // 청녹
+                case (int)WdColorIndex.wdGreen: return 0x008000;  // 초록
+                case (int)WdColorIndex.wdViolet: return 0x800080;  // 보라
+                case (int)WdColorIndex.wdDarkRed: return 0x800000;  // 진한 빨강
+                case (int)WdColorIndex.wdDarkYellow: return 0x808000;  // 진한 노랑
+                case (int)WdColorIndex.wdGray50: return 0x808080;  // 회색
+                case (int)WdColorIndex.wdGray25: return 0xC0C0C0;  // 연한 회색
+                default: return 0xFFFFFF;  // 기본값 (흰색)
+            }
         }
 
         private string GetTextStyleString(Dictionary<string, object> styleAttributes)
@@ -174,12 +219,12 @@ namespace overlay_gpt
                 }
             }
 
-            if (styleAttributes.ContainsKey("BackgroundColor"))
+            if (styleAttributes.ContainsKey("HighlightColor"))
             {
-                int bgColor = Convert.ToInt32(styleAttributes["BackgroundColor"]);
-                if (bgColor != 16777215)
+                int highlightColor = Convert.ToInt32(styleAttributes["HighlightColor"]);
+                if (highlightColor != 0)
                 {
-                    int rgbColor = ConvertColorToRGB(bgColor);
+                    int rgbColor = GetHighlightColorRGB(highlightColor);
                     string hexColor = $"#{rgbColor:X6}";
                     styleList.Add($"background-color: {hexColor}");
                 }
@@ -206,6 +251,11 @@ namespace overlay_gpt
                 {
                     if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowTitle.Length > 0)
                     {
+                        Console.WriteLine($"Word 프로세스 정보:");
+                        Console.WriteLine($"- 프로세스 ID: {process.Id}");
+                        Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
+                        Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
+                        
                         if (process.MainWindowHandle == GetForegroundWindow())
                         {
                             activeWordProcess = process;
@@ -222,14 +272,24 @@ namespace overlay_gpt
 
                 try
                 {
+                    Console.WriteLine("Word COM 객체 가져오기 시도...");
                     _wordApp = (Application)GetActiveObject("Word.Application");
-                    _document = _wordApp.ActiveDocument;
+                    Console.WriteLine("Word COM 객체 가져오기 성공");
 
+                    Console.WriteLine("활성 문서 가져오기 시도...");
+                    _document = _wordApp.ActiveDocument;
+                    
                     if (_document == null)
                     {
                         Console.WriteLine("활성 문서를 찾을 수 없습니다.");
                         return (string.Empty, new Dictionary<string, object>());
                     }
+                    
+                    Console.WriteLine($"활성 문서 정보:");
+                    Console.WriteLine($"- 문서 이름: {_document.Name}");
+                    Console.WriteLine($"- 전체 경로: {_document.FullName}");
+                    Console.WriteLine($"- 저장 여부: {(_document.Saved ? "저장됨" : "저장되지 않음")}");
+                    Console.WriteLine($"- 읽기 전용: {(_document.ReadOnly ? "예" : "아니오")}");
 
                     var selection = _wordApp.Selection;
                     if (selection == null)
@@ -253,15 +313,16 @@ namespace overlay_gpt
                     for (int i = start; i < end; i++)
                     {
                         var charRange = _document.Range(i, i + 1);
+                        var comFont = (WordFont)charRange.Font;
                         var charStyle = new Dictionary<string, object>
                         {
-                            ["FontName"] = charRange.Font.Name,
-                            ["FontSize"] = charRange.Font.Size,
-                            ["FontWeight"] = charRange.Font.Bold == -1 ? "Bold" : "Normal",
-                            ["FontItalic"] = charRange.Font.Italic == -1,
-                            ["UnderlineStyle"] = charRange.Font.Underline == WdUnderline.wdUnderlineSingle ? "Single" : "None",
-                            ["ForegroundColor"] = charRange.Font.Color,
-                            ["BackgroundColor"] = charRange.Shading.BackgroundPatternColor
+                            ["FontName"] = comFont.Name,
+                            ["FontSize"] = comFont.Size,
+                            ["FontWeight"] = comFont.Bold == -1 ? "Bold" : "Normal",
+                            ["FontItalic"] = comFont.Italic == -1,
+                            ["UnderlineStyle"] = comFont.Underline == WdUnderline.wdUnderlineSingle ? "Single" : "None",
+                            ["ForegroundColor"] = comFont.Color,
+                            ["HighlightColor"] = charRange.HighlightColorIndex
                         };
 
                         string currentChar = charRange.Text;
@@ -348,16 +409,49 @@ namespace overlay_gpt
 
         public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
+            Application? tempWordApp = null;
+            Document? tempDocument = null;
+            
             try
             {
-                if (_document == null)
-                    return (null, null, "Word", string.Empty, string.Empty);
+                Console.WriteLine("Word COM 객체 가져오기 시도...");
+                tempWordApp = (Application)GetActiveObject("Word.Application");
+                Console.WriteLine("Word COM 객체 가져오기 성공");
 
-                string filePath = _document.FullName;
-                string fileName = _document.Name;
+                Console.WriteLine("활성 문서 가져오기 시도...");
+                tempDocument = tempWordApp.ActiveDocument;
                 
-                // COM 객체를 즉시 해제하지 않고 필요한 정보를 먼저 저장
+                if (tempDocument == null)
+                {
+                    Console.WriteLine("활성 문서를 찾을 수 없습니다.");
+                    return (null, null, "Word", string.Empty, string.Empty);
+                }
+
+                string filePath = tempDocument.FullName;
+                string fileName = tempDocument.Name;
+                
+                Console.WriteLine($"Word 문서 정보:");
+                Console.WriteLine($"- 파일 경로: {filePath}");
+                Console.WriteLine($"- 파일 이름: {fileName}");
+                
+                if (string.IsNullOrEmpty(filePath))
+                {
+                    Console.WriteLine("파일 경로가 비어있습니다.");
+                    return (null, null, "Word", fileName, string.Empty);
+                }
+                
                 var fileIdInfo = GetFileId(filePath);
+                
+                if (fileIdInfo == null)
+                {
+                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                }
+                else
+                {
+                    Console.WriteLine($"파일 ID 정보:");
+                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                }
                 
                 return (
                     fileIdInfo?.FileId,
@@ -370,7 +464,13 @@ namespace overlay_gpt
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 return (null, null, "Word", string.Empty, string.Empty);
+            }
+            finally
+            {
+                if (tempDocument != null) Marshal.ReleaseComObject(tempDocument);
+                if (tempWordApp != null) Marshal.ReleaseComObject(tempWordApp);
             }
         }
 

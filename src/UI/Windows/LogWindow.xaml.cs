@@ -360,21 +360,66 @@ public partial class LogWindow : Window
         
         foreach (var chatData in chatDataList)
         {
-            var jsonString = JsonSerializer.Serialize(chatData, new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
-            
-            var styleAttributes = new Dictionary<string, object>
+            // 구분선 추가
+            var separatorStyle = new Dictionary<string, object>
             {
-                { "FontWeight", 700.0 },  // Bold
-                { "ForegroundColor", 0x0000FF }  // Blue
+                { "FontWeight", 700.0 },
+                { "ForegroundColor", 0x808080 }  // 회색
             };
-            
-            LogWithStyle($"Chat ID: {chatData.ChatId}", styleAttributes);
-            Log(jsonString);
-            Log("----------------------------------------");
+            LogWithStyle("----------------------------------------", separatorStyle);
+
+            // 채팅 ID 표시
+            var headerStyle = new Dictionary<string, object>
+            {
+                { "FontWeight", 700.0 },
+                { "ForegroundColor", 0x0000FF }  // 파란색
+            };
+            LogWithStyle($"채팅 ID: {chatData.ChatId}", headerStyle);
+
+            // 생성 시간 표시
+            var timestampStyle = new Dictionary<string, object>
+            {
+                { "FontWeight", 500.0 },
+                { "ForegroundColor", 0x008000 }  // 초록색
+            };
+            LogWithStyle($"생성 시간: {chatData.GeneratedTimestamp}", timestampStyle);
+
+            // 현재 프로그램 정보
+            var programStyle = new Dictionary<string, object>
+            {
+                { "FontWeight", 600.0 },
+                { "ForegroundColor", 0x800080 }  // 보라색
+            };
+            LogWithStyle("현재 프로그램:", programStyle);
+            Log($"  - 파일 ID: {chatData.CurrentProgram.FileId}");
+            Log($"  - 파일 타입: {chatData.CurrentProgram.FileType}");
+            Log($"  - 파일명: {chatData.CurrentProgram.FileName}");
+            Log($"  - 파일 경로: {chatData.CurrentProgram.FilePath}");
+            Log($"  - 컨텍스트: {chatData.CurrentProgram.Context}");
+
+            // 대상 프로그램 정보 (있는 경우)
+            if (chatData.TargetProgram != null)
+            {
+                LogWithStyle("대상 프로그램:", programStyle);
+                Log($"  - 파일 ID: {chatData.TargetProgram.FileId}");
+                Log($"  - 파일 타입: {chatData.TargetProgram.FileType}");
+                Log($"  - 파일명: {chatData.TargetProgram.FileName}");
+                Log($"  - 파일 경로: {chatData.TargetProgram.FilePath}");
+                Log($"  - 컨텍스트: {chatData.TargetProgram.Context}");
+            }
+
+            // 텍스트 내용
+            var textStyle = new Dictionary<string, object>
+            {
+                { "FontWeight", 600.0 },
+                { "ForegroundColor", 0xFF4500 }  // 주황색
+            };
+            LogWithStyle($"텍스트 내용 ({chatData.Texts.Count}개):", textStyle);
+            foreach (var text in chatData.Texts)
+            {
+                Log($"  - 타입: {text.Type}");
+                Log($"  - 내용: {text.Content}");
+            }
         }
     }
 
@@ -393,29 +438,29 @@ public partial class LogWindow : Window
                         Context = "샘플 컨텍스트"
                     },
                     TargetProgram = null,
-                    Texts = new List<TextInfo>
+                    Texts = new List<TextData>
                     {
-                        new TextInfo
+                        new TextData
                         {
                             Type = "text_plain",
                             Content = "일반 텍스트 메시지입니다."
                         },
-                        new TextInfo
+                        new TextData
                         {
                             Type = "text_block",
                             Content = "<b><font size=\"22\">보고서</font></b> <br> <p>샘플 내용입니다.</p>"
                         },
-                        new TextInfo
+                        new TextData
                         {
                             Type = "table_block",
-                            Content = new List<List<string>>
+                            Content = JsonSerializer.Serialize(new List<List<string>>
                             {
                                 new List<string> { "<b><color=\"blue\">제목</color></b>" },
                                 new List<string> { "내용1" },
                                 new List<string> { "내용2" }
-                            }
+                            })
                         },
-                        new TextInfo
+                        new TextData
                         {
                             Type = "code_block",
                             Content = "int a = 0;\nConsole.WriteLine(a);"

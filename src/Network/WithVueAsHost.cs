@@ -42,11 +42,11 @@ using Newtonsoft.Json.Linq;
 
 namespace overlay_gpt.Network;
 
-public class VueHub : Hub
+public class ChatHub : Hub
 {
     private readonly ProcessVueMessage _messageProcessor;
 
-    public VueHub(ProcessVueMessage messageProcessor)
+    public ChatHub(ProcessVueMessage messageProcessor)
     {
         _messageProcessor = messageProcessor;
     }
@@ -79,10 +79,6 @@ public class VueHub : Hub
     {
         try
         {
-            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 메시지 수신 시작");
-            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ConnectionId: {Context.ConnectionId}");
-            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 메시지 내용: {JsonSerializer.Serialize(message, new JsonSerializerOptions { WriteIndented = true })}");
-
             JObject jObject;
             if (message is string jsonString)
             {
@@ -148,7 +144,7 @@ public class WithVueAsHost
     private IHost? _host;
     private readonly int _port;
     private bool _isRunning;
-    private IHubContext<VueHub>? _hubContext;
+    private IHubContext<ChatHub>? _hubContext;
     private readonly WithFlaskAsClient _flaskClient;
 
     [DllImport("kernel32.dll")]
@@ -161,13 +157,13 @@ public class WithVueAsHost
         Console.WriteLine($"Vue.js 호스트 서버가 초기화되었습니다. (포트: {port})");
     }
 
-    public IHubContext<VueHub> GetHubContext()
+    public IHubContext<ChatHub> GetHubContext()
     {
         if (_host == null)
         {
             throw new InvalidOperationException("서버가 초기화되지 않았습니다.");
         }
-        return _host.Services.GetRequiredService<IHubContext<VueHub>>();
+        return _host.Services.GetRequiredService<IHubContext<ChatHub>>();
     }
 
     public async Task SendMessageToAll(object message)
@@ -251,7 +247,7 @@ public class WithVueAsHost
 
                         app.UseEndpoints(endpoints =>
                         {
-                            endpoints.MapHub<VueHub>("/chatHub");
+                            endpoints.MapHub<ChatHub>("/chatHub");
                         });
                     });
                 })
