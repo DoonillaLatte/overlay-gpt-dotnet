@@ -360,16 +360,81 @@ namespace overlay_gpt
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    string selectedText = selection.Text;
+                    // 선택된 범위의 모든 셀의 텍스트를 수집
+                    var tableHtml = new StringBuilder();
+                    tableHtml.Append("<table style='border-collapse: collapse;'>");
+                    
+                    int currentRow = -1;
+                    foreach (Microsoft.Office.Interop.Excel.Range cell in selection)
+                    {
+                        if (cell.Row != currentRow)
+                        {
+                            if (currentRow != -1)
+                            {
+                                tableHtml.Append("</tr>");
+                            }
+                            tableHtml.Append("<tr>");
+                            currentRow = cell.Row;
+                        }
+
+                        string cellText = cell.Text?.ToString() ?? string.Empty;
+                        var cellStyle = new Dictionary<string, object>();
+                        
+                        try
+                        {
+                            cellStyle["FontName"] = cell.Font?.Name ?? "Calibri";
+                            cellStyle["FontSize"] = cell.Font?.Size ?? 11;
+                            cellStyle["FontWeight"] = (cell.Font?.Bold ?? false) ? "Bold" : "Normal";
+                            cellStyle["FontItalic"] = cell.Font?.Italic ?? false;
+                            cellStyle["ForegroundColor"] = cell.Font?.Color ?? 0;
+                            cellStyle["BackgroundColor"] = cell.Interior?.Color ?? 16777215;
+                            
+                            // 셀 스타일 문자열 생성
+                            string styleString = GetCellStyleString(cellStyle);
+                            
+                            // HTML 형식으로 변환
+                            cellText = GetStyledText(cellText, cellStyle);
+                            
+                            tableHtml.Append($"<td style='{styleString}'>{cellText}</td>");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"셀 스타일 변환 중 오류 발생: {ex.Message}");
+                            tableHtml.Append($"<td>{cellText}</td>");
+                        }
+                    }
+                    
+                    if (currentRow != -1)
+                    {
+                        tableHtml.Append("</tr>");
+                    }
+                    tableHtml.Append("</table>");
+                    
+                    string selectedText = tableHtml.ToString();
+
                     var styleAttributes = new Dictionary<string, object>();
                     
                     // 스타일 정보 수집
-                    styleAttributes["FontName"] = selection.Font.Name;
-                    styleAttributes["FontSize"] = selection.Font.Size;
-                    styleAttributes["FontWeight"] = selection.Font.Bold ? "Bold" : "Normal";
-                    styleAttributes["FontItalic"] = selection.Font.Italic;
-                    styleAttributes["ForegroundColor"] = selection.Font.Color;
-                    styleAttributes["BackgroundColor"] = selection.Interior.Color;
+                    try
+                    {
+                        styleAttributes["FontName"] = selection.Font?.Name ?? "Calibri";
+                        styleAttributes["FontSize"] = selection.Font?.Size ?? 11;
+                        styleAttributes["FontWeight"] = (selection.Font?.Bold ?? false) ? "Bold" : "Normal";
+                        styleAttributes["FontItalic"] = selection.Font?.Italic ?? false;
+                        styleAttributes["ForegroundColor"] = selection.Font?.Color ?? 0;
+                        styleAttributes["BackgroundColor"] = selection.Interior?.Color ?? 16777215;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"스타일 정보 수집 중 오류 발생: {ex.Message}");
+                        // 기본 스타일 정보 설정
+                        styleAttributes["FontName"] = "Calibri";
+                        styleAttributes["FontSize"] = 11;
+                        styleAttributes["FontWeight"] = "Normal";
+                        styleAttributes["FontItalic"] = false;
+                        styleAttributes["ForegroundColor"] = 0;
+                        styleAttributes["BackgroundColor"] = 16777215;
+                    }
 
                     // 선택된 범위의 시작 행/열과 끝 행/열 구하기
                     int startRow = selection.Row;

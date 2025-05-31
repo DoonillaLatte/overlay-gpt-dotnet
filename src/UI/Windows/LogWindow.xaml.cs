@@ -488,16 +488,7 @@ public partial class LogWindow : Window
             // 테스트용 데이터 생성
             var testContext = new
             {
-                Text = @"<table style='border-collapse: collapse; width: 100%;'>
-                    <tr>
-                        <td style='border: 1px solid #000000; padding: 5px; background-color: #FFFF00; color: #0000FF; font-family: 맑은 고딕; font-size: 12pt; font-weight: bold;'>테스트 셀 1</td>
-                        <td style='border: 1px solid #000000; padding: 5px; background-color: #E6E6FA; color: #000000; font-family: 맑은 고딕; font-size: 11pt;'>테스트 셀 2</td>
-                    </tr>
-                    <tr>
-                        <td style='border: 1px solid #000000; padding: 5px; background-color: #E6E6FA; color: #000000; font-family: 맑은 고딕; font-size: 11pt;'>테스트 셀 3</td>
-                        <td style='border: 1px solid #000000; padding: 5px; background-color: #FFFF00; color: #0000FF; font-family: 맑은 고딕; font-size: 12pt; font-weight: bold;'>테스트 셀 4</td>
-                    </tr>
-                </table>",
+                Text = @"<table style='border-collapse: collapse;'><tr><td style='background-color: #FFFF00; color: #0000FF; font-size: 12pt'><b>테스트 셀 1</b></td><td style='background-color: #E6E6FA'>테스트 셀 2</td><td style=''></td></tr><tr><td style='background-color: #E6E6FA'>테스트 셀 3</td><td style='background-color: #FFFF00; color: #0000FF; font-size: 12pt'><b>테스트 셀 4</b></td><td style=''>e</td></tr><tr><td style=''>segseg</td><td style=''>g</td><td style=''>ge</td></tr><tr><td style=''>segseg</td><td style=''></td><td style=''></td></tr><tr><td style=''>eg</td><td style=''></td><td style=''>gdas</td></tr></table>",
                 Position = "R1C1-R2C2" // Excel의 경우 "R1C1-R2C2" 형식 사용
             };
 
