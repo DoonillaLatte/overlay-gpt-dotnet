@@ -31,7 +31,8 @@ namespace overlay_gpt.Network
                 { "ping", HandlePing },
                 { "generate_chat_id", HandleGenerateChatId },
                 { "apply_response", HandleApplyResponse },
-                { "cancel_response", HandleCancelResponse }
+                { "cancel_response", HandleCancelResponse },
+                { "request_top_workflows", HandleRequestTopWorkflows }
             };
         }
 
@@ -271,6 +272,39 @@ namespace overlay_gpt.Network
         {
             // TODO: 응답 취소 로직 구현
             await Task.CompletedTask;
+        }
+
+        private async Task HandleRequestTopWorkflows(JObject data)
+        {
+            try
+            {
+                var chatId = data["chat_id"]?.Value<int>();
+                if (chatId == null)
+                {
+                    throw new Exception("chat_id가 누락되었습니다.");
+                }
+
+                var chatData = ChatDataManager.Instance.GetChatDataById(chatId.Value);
+                if (chatData == null)
+                {
+                    throw new Exception($"Chat ID {chatId}에 해당하는 데이터를 찾을 수 없습니다.");
+                }
+
+                var flaskRequest = new
+                {
+                    command = "get_workflows",
+                    chat_id = chatId,
+                    current_program = chatData.CurrentProgram
+                };
+
+                await _flaskClient.EmitAsync("message", flaskRequest);
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Flask 서버로 워크플로우 요청을 전송했습니다.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"워크플로우 요청 처리 중 오류 발생: {ex.Message}");
+                throw;
+            }
         }
 
         private async Task SendErrorResponse(string connectionId, string errorMessage)

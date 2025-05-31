@@ -20,7 +20,8 @@ namespace overlay_gpt.Network
                 { "hide_overlay", HandleHideOverlay },
                 { "update_content", HandleUpdateContent },
                 { "error", HandleError },
-                { "generated_response", HandleGeneratedResponse }
+                { "generated_response", HandleGeneratedResponse },
+                { "response_workflows", HandleResponseWorkflows }
             };
         }
 
@@ -155,6 +156,19 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"메시지 처리 중 오류 발생: {ex.Message}");
+            }
+        }
+
+        private async Task HandleResponseWorkflows(JObject data)
+        {
+            try
+            {
+                Console.WriteLine("HandleResponseWorkflows 시작");
+                // TODO: 워크플로우 응답 처리 로직 구현
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"워크플로우 응답 처리 중 오류 발생: {ex.Message}");
             }
         }
 
