@@ -279,6 +279,7 @@ namespace overlay_gpt.Network
             try
             {
                 var chatId = data["chat_id"]?.Value<int>();
+                var fileType = data["file_type"]?.ToString();
                 if (chatId == null)
                 {
                     throw new Exception("chat_id가 누락되었습니다.");
@@ -294,6 +295,7 @@ namespace overlay_gpt.Network
                 {
                     command = "get_workflows",
                     chat_id = chatId,
+                    file_type = fileType,
                     current_program = chatData.CurrentProgram
                 };
 
