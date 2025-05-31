@@ -27,6 +27,29 @@ namespace overlay_gpt
             return obj;
         }
 
+        private WdColorIndex GetHighlightColorIndexFromRGB(int rgbColor)
+        {
+            // RGB 색상에 따른 WdColorIndex 매핑
+            switch (rgbColor)
+            {
+                case 0xFFFF00: return WdColorIndex.wdYellow;  // 노랑
+                case 0x00FF00: return WdColorIndex.wdBrightGreen;  // 밝은 초록
+                case 0x00FFFF: return WdColorIndex.wdTurquoise;  // 청록
+                case 0xFF00FF: return WdColorIndex.wdPink;  // 분홍     
+                case 0x0000FF: return WdColorIndex.wdBlue;  // 파랑
+                case 0xFF0000: return WdColorIndex.wdRed;  // 빨강
+                case 0x000080: return WdColorIndex.wdDarkBlue;  // 진한 파랑
+                case 0x008080: return WdColorIndex.wdTeal;  // 청녹
+                case 0x008000: return WdColorIndex.wdGreen;  // 초록
+                case 0x800080: return WdColorIndex.wdViolet;  // 보라
+                case 0x800000: return WdColorIndex.wdDarkRed;  // 진한 빨강
+                case 0x808000: return WdColorIndex.wdDarkYellow;  // 진한 노랑
+                case 0x808080: return WdColorIndex.wdGray50;  // 회색
+                case 0xC0C0C0: return WdColorIndex.wdGray25;  // 연한 회색
+                default: return WdColorIndex.wdNoHighlight;  // 기본값 (하이라이트 없음)
+            }
+        }
+
         public bool OpenFile(string filePath)
         {
             try
@@ -244,7 +267,7 @@ namespace overlay_gpt
                                 {
                                     Console.WriteLine($"배경색 설정: {bgColor}");
                                     var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                    currentNodeRange.Shading.BackgroundPatternColor = (WdColor)rgb;
+                                    currentNodeRange.HighlightColorIndex = GetHighlightColorIndexFromRGB(rgb);
                                 }
                             }
 

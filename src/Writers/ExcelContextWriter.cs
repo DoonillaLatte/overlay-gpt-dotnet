@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Excel;
 using System.Diagnostics;
 using HtmlAgilityPack;
+using Range = Microsoft.Office.Interop.Excel.Range;
 
 namespace overlay_gpt
 {
@@ -32,14 +33,43 @@ namespace overlay_gpt
         {
             try
             {
-                Console.WriteLine("Excel COM 객체 생성 시도...");
-                _excelApp = new Application();
-                _excelApp.Visible = false; // 백그라운드에서 실행
-                Console.WriteLine("Excel COM 객체 생성 성공");
+                Console.WriteLine("기존 Excel 프로세스 확인 중...");
+                try
+                {
+                    _excelApp = (Application)GetActiveObject("Excel.Application");
+                    Console.WriteLine("기존 Excel 프로세스 발견");
+
+                    // 이미 열려있는 문서 확인
+                    foreach (Workbook wb in _excelApp.Workbooks)
+                    {
+                        try
+                        {
+                            if (wb.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                Console.WriteLine("파일이 이미 열려있습니다.");
+                                _workbook = wb;
+                                _worksheet = _excelApp.ActiveSheet as Worksheet;
+                                return true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"워크북 확인 중 오류 발생: {ex.Message}");
+                            continue;
+                        }
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine("새로운 Excel COM 객체 생성 시도...");
+                    _excelApp = new Application();
+                    _excelApp.Visible = false; // 백그라운드에서 실행
+                    Console.WriteLine("새로운 Excel COM 객체 생성 성공");
+                }
 
                 Console.WriteLine($"파일 열기 시도: {filePath}");
                 _workbook = _excelApp.Workbooks.Open(filePath);
-                _worksheet = _workbook.ActiveSheet;
+                _worksheet = _excelApp.ActiveSheet as Worksheet;
                 Console.WriteLine("파일 열기 성공");
 
                 return true;
@@ -48,6 +78,24 @@ namespace overlay_gpt
             {
                 Console.WriteLine($"Excel 파일 열기 오류 발생: {ex.Message}");
                 Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                
+                // 오류 발생 시 COM 객체 정리
+                if (_worksheet != null)
+                {
+                    try { Marshal.ReleaseComObject(_worksheet); } catch { }
+                    _worksheet = null;
+                }
+                if (_workbook != null)
+                {
+                    try { Marshal.ReleaseComObject(_workbook); } catch { }
+                    _workbook = null;
+                }
+                if (_excelApp != null)
+                {
+                    try { Marshal.ReleaseComObject(_excelApp); } catch { }
+                    _excelApp = null;
+                }
+                
                 return false;
             }
         }
@@ -56,13 +104,16 @@ namespace overlay_gpt
         {
             try
             {
-                if (_excelApp == null || _workbook == null || _worksheet == null)
+                if (_excelApp == null || _worksheet == null)
                 {
                     Console.WriteLine("Excel 애플리케이션이 초기화되지 않았습니다.");
                     return false;
                 }
 
-                // 라인 번호 파싱 (예: "R1C1-R1C1")
+                Console.WriteLine($"텍스트 적용 시작 - 라인 번호: {lineNumber}");
+                Console.WriteLine($"적용할 텍스트: {text}");
+
+                // 라인 번호 파싱 (예: "R1C1-R2C2")
                 var lineNumbers = lineNumber.Split('-');
                 if (lineNumbers.Length != 2)
                 {
@@ -70,139 +121,183 @@ namespace overlay_gpt
                     return false;
                 }
 
-                // 시작 셀과 끝 셀 파싱
-                var startCell = lineNumbers[0].Replace("R", "").Replace("C", ",").Split(',');
-                var endCell = lineNumbers[1].Replace("R", "").Replace("C", ",").Split(',');
-
-                if (startCell.Length != 2 || endCell.Length != 2)
-                {
-                    Console.WriteLine("잘못된 셀 형식입니다.");
-                    return false;
-                }
+                // 시작 셀과 끝 셀의 행/열 번호 추출
+                var startCell = lineNumbers[0].Substring(1).Split('C');
+                var endCell = lineNumbers[1].Substring(1).Split('C');
 
                 int startRow = int.Parse(startCell[0]);
                 int startCol = int.Parse(startCell[1]);
                 int endRow = int.Parse(endCell[0]);
                 int endCol = int.Parse(endCell[1]);
 
+                Console.WriteLine($"시작 셀: R{startRow}C{startCol}, 종료 셀: R{endRow}C{endCol}");
+
                 // 선택된 범위 설정
-                var range = _worksheet.Range[
-                    _worksheet.Cells[startRow, startCol],
-                    _worksheet.Cells[endRow, endCol]
-                ];
-
-                // HTML 태그 처리
-                var htmlDoc = new HtmlDocument();
-                htmlDoc.LoadHtml(text);
-
-                // 텍스트와 스타일 적용
-                foreach (var node in htmlDoc.DocumentNode.ChildNodes)
+                Range selectedRange = null;
+                try
                 {
-                    if (node.NodeType == HtmlNodeType.Text)
-                    {
-                        range.Text = node.InnerText;
-                    }
-                    else
-                    {
-                        var style = node.GetAttributeValue("style", "");
-                        var font = range.Font;
-
-                        // 스타일 속성 파싱
-                        var styleAttributes = style.Split(';')
-                            .Select(s => s.Trim().Split(':'))
-                            .Where(p => p.Length == 2)
-                            .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
-
-                        // 폰트 패밀리
-                        if (styleAttributes.TryGetValue("font-family", out var fontFamily))
-                        {
-                            font.Name = fontFamily.Trim('\'');
-                        }
-
-                        // 폰트 크기
-                        if (styleAttributes.TryGetValue("font-size", out var fontSize))
-                        {
-                            if (fontSize.EndsWith("pt"))
-                            {
-                                font.Size = float.Parse(fontSize.Replace("pt", ""));
-                            }
-                        }
-
-                        // 색상
-                        if (styleAttributes.TryGetValue("color", out var color))
-                        {
-                            if (color.StartsWith("#"))
-                            {
-                                var rgb = int.Parse(color.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                font.Color = rgb;
-                            }
-                        }
-
-                        // 배경색
-                        if (styleAttributes.TryGetValue("background-color", out var bgColor))
-                        {
-                            if (bgColor.StartsWith("#"))
-                            {
-                                var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                range.Interior.Color = rgb;
-                            }
-                        }
-
-                        // 굵게
-                        if (node.Name == "b" || node.Name == "strong")
-                        {
-                            font.Bold = true;
-                        }
-
-                        // 기울임
-                        if (node.Name == "i" || node.Name == "em")
-                        {
-                            font.Italic = true;
-                        }
-
-                        // 밑줄
-                        if (node.Name == "u")
-                        {
-                            font.Underline = XlUnderlineStyle.xlUnderlineStyleSingle;
-                        }
-
-                        // 취소선
-                        if (node.Name == "s" || node.Name == "strike")
-                        {
-                            font.Strikethrough = true;
-                        }
-
-                        // 텍스트 정렬
-                        if (styleAttributes.TryGetValue("text-align", out var textAlign))
-                        {
-                            range.HorizontalAlignment = textAlign switch
-                            {
-                                "center" => XlHAlign.xlHAlignCenter,
-                                "right" => XlHAlign.xlHAlignRight,
-                                "justify" => XlHAlign.xlHAlignJustify,
-                                _ => XlHAlign.xlHAlignLeft
-                            };
-                        }
-
-                        if (styleAttributes.TryGetValue("vertical-align", out var verticalAlign))
-                        {
-                            range.VerticalAlignment = verticalAlign switch
-                            {
-                                "top" => XlVAlign.xlVAlignTop,
-                                "middle" => XlVAlign.xlVAlignCenter,
-                                _ => XlVAlign.xlVAlignBottom
-                            };
-                        }
-
-                        range.Text = node.InnerText;
-                    }
+                    Console.WriteLine("셀 범위 설정 시도...");
+                    selectedRange = _worksheet.Range[
+                        _worksheet.Cells[startRow, startCol],
+                        _worksheet.Cells[endRow, endCol]
+                    ];
+                    Console.WriteLine("셀 범위 설정 성공");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"셀 범위 설정 중 오류 발생: {ex.Message}");
+                    return false;
                 }
 
+                if (selectedRange == null)
+                {
+                    Console.WriteLine("셀 범위를 설정할 수 없습니다.");
+                    return false;
+                }
+
+                // HTML 태그 처리
+                Console.WriteLine("HTML 파싱 시작...");
+                var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+                htmlDoc.LoadHtml(text);
+                Console.WriteLine($"HTML 노드 수: {htmlDoc.DocumentNode.ChildNodes.Count}");
+
+                // 테이블 구조 파싱
+                var tableNode = htmlDoc.DocumentNode.SelectSingleNode("//table");
+                if (tableNode != null)
+                {
+                    var rows = tableNode.SelectNodes(".//tr");
+                    if (rows != null)
+                    {
+                        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+                        {
+                            var cells = rows[rowIndex].SelectNodes(".//td");
+                            if (cells != null)
+                            {
+                                for (int colIndex = 0; colIndex < cells.Count; colIndex++)
+                                {
+                                    var cell = cells[colIndex];
+                                    var cellRange = _worksheet.Range[
+                                        _worksheet.Cells[startRow + rowIndex, startCol + colIndex],
+                                        _worksheet.Cells[startRow + rowIndex, startCol + colIndex]
+                                    ];
+
+                                    try
+                                    {
+                                        Console.WriteLine($"셀 처리 시작 - 행: {rowIndex + 1}, 열: {colIndex + 1}");
+                                        
+                                        // 텍스트 적용
+                                        cellRange.Value2 = cell.InnerText.Trim();
+                                        
+                                        // 스타일 적용
+                                        var style = cell.GetAttributeValue("style", "");
+                                        Console.WriteLine($"셀 스타일: {style}");
+                                        
+                                        var styleAttributes = style.Split(';')
+                                            .Select(s => s.Trim().Split(':'))
+                                            .Where(p => p.Length == 2)
+                                            .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+
+                                        // 폰트 설정
+                                        var font = cellRange.Font;
+
+                                        // 배경색
+                                        if (styleAttributes.TryGetValue("background-color", out var bgColor))
+                                        {
+                                            if (bgColor.StartsWith("#"))
+                                            {
+                                                Console.WriteLine($"배경색 설정: {bgColor}");
+                                                var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
+                                                // BGR로 변환 (Excel은 BGR 형식 사용)
+                                                int b = (rgb >> 16) & 0xFF;
+                                                int g = (rgb >> 8) & 0xFF;
+                                                int r = rgb & 0xFF;
+                                                int bgr = (r << 16) | (g << 8) | b;
+                                                cellRange.Interior.Color = bgr;
+                                            }
+                                        }
+
+                                        // 텍스트 색상
+                                        if (styleAttributes.TryGetValue("color", out var color))
+                                        {
+                                            if (color.StartsWith("#"))
+                                            {
+                                                Console.WriteLine($"텍스트 색상 설정: {color}");
+                                                var rgb = int.Parse(color.Substring(1), System.Globalization.NumberStyles.HexNumber);
+                                                // BGR로 변환 (Excel은 BGR 형식 사용)
+                                                int b = (rgb >> 16) & 0xFF;
+                                                int g = (rgb >> 8) & 0xFF;
+                                                int r = rgb & 0xFF;
+                                                int bgr = (r << 16) | (g << 8) | b;
+                                                font.Color = bgr;
+                                            }
+                                        }
+
+                                        // 폰트 패밀리
+                                        if (styleAttributes.TryGetValue("font-family", out var fontFamily))
+                                        {
+                                            Console.WriteLine($"폰트 패밀리 설정: {fontFamily}");
+                                            font.Name = fontFamily.Trim('\'');
+                                        }
+
+                                        // 폰트 크기
+                                        if (styleAttributes.TryGetValue("font-size", out var fontSize))
+                                        {
+                                            if (fontSize.EndsWith("pt"))
+                                            {
+                                                Console.WriteLine($"폰트 크기 설정: {fontSize}");
+                                                font.Size = float.Parse(fontSize.Replace("pt", ""));
+                                            }
+                                        }
+
+                                        // 굵게
+                                        if (styleAttributes.TryGetValue("font-weight", out var fontWeight) && fontWeight == "bold")
+                                        {
+                                            Console.WriteLine("굵게 스타일 적용");
+                                            font.Bold = -1;
+                                        }
+
+                                        // 테두리
+                                        if (styleAttributes.TryGetValue("border", out var borderStyle))
+                                        {
+                                            if (borderStyle.Contains("solid"))
+                                            {
+                                                Console.WriteLine("테두리 스타일 적용");
+                                                cellRange.Borders.LineStyle = XlLineStyle.xlContinuous;
+                                                cellRange.Borders.Color = 0; // 검은색
+                                            }
+                                        }
+
+                                        Console.WriteLine($"셀 처리 완료 - 행: {rowIndex + 1}, 열: {colIndex + 1}");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"셀 처리 중 오류 발생: {ex.Message}");
+                                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                                    }
+                                    finally
+                                    {
+                                        if (cellRange != null)
+                                        {
+                                            try { Marshal.ReleaseComObject(cellRange); } catch { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("테이블 구조를 찾을 수 없습니다.");
+                }
+
+                Console.WriteLine("텍스트 적용 완료");
                 return true;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"텍스트 적용 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 return false;
             }
         }
@@ -230,7 +325,7 @@ namespace overlay_gpt
                 string filePath = tempWorkbook.FullName;
                 string fileName = tempWorkbook.Name;
                 
-                Console.WriteLine($"Excel 문서 정보:");
+                Console.WriteLine($"Excel 워크북 정보:");
                 Console.WriteLine($"- 파일 경로: {filePath}");
                 Console.WriteLine($"- 파일 이름: {fileName}");
                 
@@ -254,5 +349,26 @@ namespace overlay_gpt
                 if (tempExcelApp != null) Marshal.ReleaseComObject(tempExcelApp);
             }
         }
+
+        public void Dispose()
+        {
+            if (_worksheet != null)
+            {
+                try { Marshal.ReleaseComObject(_worksheet); } catch { }
+                _worksheet = null;
+            }
+            if (_workbook != null)
+            {
+                try { Marshal.ReleaseComObject(_workbook); } catch { }
+                _workbook = null;
+            }
+            if (_excelApp != null)
+            {
+                try { Marshal.ReleaseComObject(_excelApp); } catch { }
+                _excelApp = null;
+            }
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
     }
-} 
+}

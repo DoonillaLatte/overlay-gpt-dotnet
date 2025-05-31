@@ -481,6 +481,72 @@ public partial class LogWindow : Window
         }
     }
 
+    private async void ApplyExcelContextButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 테스트용 데이터 생성
+            var testContext = new
+            {
+                Text = @"<table style='border-collapse: collapse; width: 100%;'>
+                    <tr>
+                        <td style='border: 1px solid #000000; padding: 5px; background-color: #FFFF00; color: #0000FF; font-family: 맑은 고딕; font-size: 12pt; font-weight: bold;'>테스트 셀 1</td>
+                        <td style='border: 1px solid #000000; padding: 5px; background-color: #E6E6FA; color: #000000; font-family: 맑은 고딕; font-size: 11pt;'>테스트 셀 2</td>
+                    </tr>
+                    <tr>
+                        <td style='border: 1px solid #000000; padding: 5px; background-color: #E6E6FA; color: #000000; font-family: 맑은 고딕; font-size: 11pt;'>테스트 셀 3</td>
+                        <td style='border: 1px solid #000000; padding: 5px; background-color: #FFFF00; color: #0000FF; font-family: 맑은 고딕; font-size: 12pt; font-weight: bold;'>테스트 셀 4</td>
+                    </tr>
+                </table>",
+                Position = "R1C1-R2C2" // Excel의 경우 "R1C1-R2C2" 형식 사용
+            };
+
+            // 테스트용 프로그램 정보 생성
+            var testProgram = new
+            {
+                FileType = "Excel",
+                FilePath = @"C:\Users\beste\OneDrive\Desktop\testFolder\single_test.xlsx" // 실제 테스트할 파일 경로
+            };
+
+            // Writer 생성 및 적용
+            var writer = ContextWriterFactory.CreateWriter(testProgram.FileType);
+            if (writer == null)
+            {
+                Log("지원하지 않는 프로그램입니다.");
+                return;
+            }
+
+            // 파일 열기
+            Log("파일 열기 시도...");
+            if (!writer.OpenFile(testProgram.FilePath))
+            {
+                Log("파일을 열 수 없습니다.");
+                return;
+            }
+            Log("파일 열기 성공");
+
+            // 컨텍스트 적용
+            Log("컨텍스트 적용 시도...");
+            bool success = writer.ApplyTextWithStyle(
+                testContext.Text,
+                testContext.Position
+            );
+
+            if (success)
+            {
+                Log("컨텍스트 적용 성공");
+            }
+            else
+            {
+                Log("컨텍스트 적용 실패");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"오류 발생: {ex.Message}");
+        }
+    }
+
     private void ParameterTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ParameterTypeComboBox.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content != null && ParameterTextBox != null)
