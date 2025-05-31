@@ -233,7 +233,7 @@ namespace overlay_gpt
             return string.Join("; ", styleList);
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             try
             {
@@ -267,7 +267,7 @@ namespace overlay_gpt
                 if (activeWordProcess == null)
                 {
                     Console.WriteLine("활성화된 Word 창을 찾을 수 없습니다.");
-                    return (string.Empty, new Dictionary<string, object>());
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
 
                 try
@@ -282,7 +282,7 @@ namespace overlay_gpt
                     if (_document == null)
                     {
                         Console.WriteLine("활성 문서를 찾을 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>());
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
                     
                     Console.WriteLine($"활성 문서 정보:");
@@ -295,12 +295,39 @@ namespace overlay_gpt
                     if (selection == null)
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>());
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
                     string selectedText = selection.Text;
                     var styleAttributes = new Dictionary<string, object>();
                     var styledTextBuilder = new StringBuilder();
+
+                    // 전체 문서의 라인 수를 기준으로 선택된 텍스트의 시작과 끝 라인 번호 계산
+                    int totalLines = _document.ComputeStatistics(WdStatistic.wdStatisticLines);
+                    int startLine = 1;
+                    int endLine = totalLines;
+
+                    // 선택된 텍스트의 시작과 끝 위치를 기준으로 라인 번호 계산
+                    int selectionStart = selection.Range.Start;
+                    int selectionEnd = selection.Range.End;
+
+                    for (int i = 1; i <= totalLines; i++)
+                    {
+                        var lineRange = _document.Range(_document.GoTo(WdGoToItem.wdGoToLine, WdGoToDirection.wdGoToAbsolute, i).Start,
+                                                      _document.GoTo(WdGoToItem.wdGoToLine, WdGoToDirection.wdGoToAbsolute, i).End);
+                        
+                        if (lineRange.Start <= selectionStart && lineRange.End >= selectionStart)
+                        {
+                            startLine = i;
+                        }
+                        if (lineRange.Start <= selectionEnd && lineRange.End >= selectionEnd)
+                        {
+                            endLine = i;
+                            break;
+                        }
+                    }
+
+                    string lineNumber = $"{startLine}-{endLine}";
 
                     // 선택된 텍스트의 각 부분에 대해 스타일 정보 수집
                     var range = selection.Range;
@@ -385,12 +412,12 @@ namespace overlay_gpt
                         styledTextBuilder.Append(styledText);
                     }
 
-                    return (styledTextBuilder.ToString(), styleAttributes);
+                    return (styledTextBuilder.ToString(), styleAttributes, lineNumber);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Word COM 연결 오류: {ex.Message}");
-                    return (string.Empty, new Dictionary<string, object>());
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
             }
             catch (Exception ex)
@@ -398,7 +425,7 @@ namespace overlay_gpt
                 Console.WriteLine($"Word 데이터 읽기 오류 발생: {ex.Message}");
                 Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 LogWindow.Instance.Log($"Word 데이터 읽기 오류: {ex.Message}");
-                return (string.Empty, new Dictionary<string, object>());
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
             }
             finally
             {

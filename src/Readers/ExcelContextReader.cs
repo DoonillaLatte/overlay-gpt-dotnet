@@ -288,14 +288,12 @@ namespace overlay_gpt
             return string.Join("; ", styleList);
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             try
             {
                 Console.WriteLine("Excel 데이터 읽기 시작...");
 
-                // 실행 중인 Excel 애플리케이션 가져오기
-                Console.WriteLine("실행 중인 Excel 애플리케이션 가져오기 시도...");
                 var excelProcesses = Process.GetProcessesByName("EXCEL");
                 if (excelProcesses.Length == 0)
                 {
@@ -303,7 +301,6 @@ namespace overlay_gpt
                     throw new InvalidOperationException("Excel is not running");
                 }
 
-                // 활성화된 Excel 창 찾기
                 Process? activeExcelProcess = null;
                 foreach (var process in excelProcesses)
                 {
@@ -311,13 +308,9 @@ namespace overlay_gpt
                     {
                         Console.WriteLine($"Excel 프로세스 정보:");
                         Console.WriteLine($"- 프로세스 ID: {process.Id}");
-                        Console.WriteLine($"- 시작 시간: {process.StartTime}");
-                        Console.WriteLine($"- 메모리 사용량: {process.WorkingSet64 / 1024 / 1024} MB");
                         Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
                         Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
-                        Console.WriteLine("------------------------");
-
-                        // 현재 활성화된 창인지 확인
+                        
                         if (process.MainWindowHandle == GetForegroundWindow())
                         {
                             activeExcelProcess = process;
@@ -328,193 +321,83 @@ namespace overlay_gpt
 
                 if (activeExcelProcess == null)
                 {
-                    Console.WriteLine("활성화된 Excel 창을 찾을 수 없습니다. Excel 창을 선택해주세요.");
-                    return (string.Empty, new Dictionary<string, object>());
+                    Console.WriteLine("활성화된 Excel 창을 찾을 수 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
 
-                // COM을 통해 실행 중인 Excel 인스턴스에 연결
                 try
                 {
-                    // 실행 중인 Excel 인스턴스에 직접 연결
+                    Console.WriteLine("Excel COM 객체 가져오기 시도...");
                     _excelApp = (Application)GetActiveObject("Excel.Application");
+                    Console.WriteLine("Excel COM 객체 가져오기 성공");
+
+                    Console.WriteLine("활성 워크북 가져오기 시도...");
+                    _workbook = _excelApp.ActiveWorkbook;
                     
-                    // 실행 중인 모든 Excel 인스턴스 가져오기
-                    var runningInstances = _excelApp.Workbooks;
-                    Console.WriteLine($"실행 중인 Excel 인스턴스 수: {runningInstances.Count}");
-                    foreach (Workbook wb in runningInstances)
+                    if (_workbook == null)
                     {
-                        Console.WriteLine($"Excel 인스턴스 정보: {wb.FullName}");
+                        Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
                     
-                    // 활성화된 Excel 인스턴스 찾기
-                    _workbook = _excelApp.ActiveWorkbook;
-                    if (_workbook != null)
+                    Console.WriteLine($"활성 워크북 정보:");
+                    Console.WriteLine($"- 워크북 이름: {_workbook.Name}");
+                    Console.WriteLine($"- 전체 경로: {_workbook.FullName}");
+                    Console.WriteLine($"- 저장 여부: {(_workbook.Saved ? "저장됨" : "저장되지 않음")}");
+                    Console.WriteLine($"- 읽기 전용: {(_workbook.ReadOnly ? "예" : "아니오")}");
+
+                    _worksheet = _excelApp.ActiveSheet as Worksheet;
+                    if (_worksheet == null)
                     {
-                        Console.WriteLine($"활성 워크북 찾음: {_workbook.FullName}");
+                        Console.WriteLine("활성 워크시트를 찾을 수 없습니다.");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    if (_excelApp == null)
+                    var selection = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                    if (selection == null)
                     {
-                        Console.WriteLine("실행 중인 Excel 애플리케이션에 연결할 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>());
+                        Console.WriteLine("선택된 셀이 없습니다.");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
-                    Console.WriteLine("실행 중인 Excel 애플리케이션 연결 성공");
+
+                    string selectedText = selection.Text;
+                    var styleAttributes = new Dictionary<string, object>();
+                    
+                    // 스타일 정보 수집
+                    styleAttributes["FontName"] = selection.Font.Name;
+                    styleAttributes["FontSize"] = selection.Font.Size;
+                    styleAttributes["FontWeight"] = selection.Font.Bold ? "Bold" : "Normal";
+                    styleAttributes["FontItalic"] = selection.Font.Italic;
+                    styleAttributes["ForegroundColor"] = selection.Font.Color;
+                    styleAttributes["BackgroundColor"] = selection.Interior.Color;
+
+                    // 선택된 범위의 시작 행/열과 끝 행/열 구하기
+                    int startRow = selection.Row;
+                    int endRow = selection.Row + selection.Rows.Count - 1;
+                    int startCol = selection.Column;
+                    int endCol = selection.Column + selection.Columns.Count - 1;
+                    string lineNumber = $"R{startRow}C{startCol}-R{endRow}C{endCol}";
+
+                    return (selectedText, styleAttributes, lineNumber);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Excel COM 연결 오류: {ex.Message}");
-                    return (string.Empty, new Dictionary<string, object>());
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
-
-                // 현재 활성화된 워크북과 워크시트 가져오기
-                Console.WriteLine("활성 워크북 가져오기 시도...");
-                if (_workbook == null)
-                {
-                    _workbook = _excelApp.ActiveWorkbook;
-                }
-                
-                if (_workbook != null)
-                {
-                    string filePath = _workbook.FullName;
-                    Console.WriteLine($"현재 편집 중인 Excel 파일 정보:");
-                    Console.WriteLine($"- 파일 이름: {_workbook.Name}");
-                    Console.WriteLine($"- 전체 경로: {filePath}");
-                    Console.WriteLine($"- 저장 여부: {(_workbook.Saved ? "저장됨" : "저장되지 않음")}");
-                    Console.WriteLine($"- 읽기 전용: {(_workbook.ReadOnly ? "예" : "아니오")}");
-
-                    // NTFS 파일 ID 가져오기
-                    var fileIdInfo = GetFileId(filePath);
-                    if (fileIdInfo.HasValue)
-                    {
-                        Console.WriteLine($"- NTFS 파일 ID: {fileIdInfo.Value.FileId}");
-                        Console.WriteLine($"- 볼륨 ID: {fileIdInfo.Value.VolumeId}");
-                    }
-                    Console.WriteLine("------------------------");
-                }
-                Console.WriteLine("활성 워크시트 가져오기 시도...");
-                _worksheet = _excelApp.ActiveSheet;
-
-                if (_worksheet == null)
-                {
-                    Console.WriteLine("활성 워크시트를 찾을 수 없습니다.");
-                    return (string.Empty, new Dictionary<string, object>());
-                }
-                Console.WriteLine("활성 워크시트 찾음");
-
-                // 현재 선택된 범위 가져오기
-                Console.WriteLine("선택된 범위 가져오기 시도...");
-                Microsoft.Office.Interop.Excel.Range selectedRange = _excelApp.Selection;
-                
-                // 선택된 범위의 상세 정보 출력
-                Console.WriteLine($"선택된 범위 정보:");
-                Console.WriteLine($"- 주소: {selectedRange.Address}");
-                Console.WriteLine($"- 행 수: {selectedRange.Rows.Count}");
-                Console.WriteLine($"- 열 수: {selectedRange.Columns.Count}");
-
-                // 2차원 배열 데이터 처리
-                object[,] values = selectedRange.Value2 as object[,];
-                StringBuilder selectedText = new StringBuilder();
-                if (values != null)
-                {
-                    selectedText.Append("<table style='border-collapse:collapse'>");
-                    for (int i = 1; i <= values.GetLength(0); i++)
-                    {
-                        selectedText.Append("<tr>");
-                        for (int j = 1; j <= values.GetLength(1); j++)
-                        {
-                            var cell = selectedRange.Cells[i, j];
-                            var cellStyle = new Dictionary<string, object>
-                            {
-                                ["FontName"] = cell.Font.Name,
-                                ["FontSize"] = cell.Font.Size,
-                                ["FontWeight"] = cell.Font.Bold ? "Bold" : "Normal",
-                                ["FontItalic"] = cell.Font.Italic,
-                                ["FontStrikethrough"] = cell.Font.Strikethrough,
-                                ["FontSuperscript"] = cell.Font.Superscript,
-                                ["FontSubscript"] = cell.Font.Subscript,
-                                ["FontShadow"] = cell.Font.Shadow,
-                                ["ForegroundColor"] = cell.Font.Color,
-                                ["BackgroundColor"] = cell.Interior.Color,
-                                ["UnderlineStyle"] = cell.Font.Underline == 2 ? "Single" : "None",
-                                ["HorizontalAlignment"] = cell.HorizontalAlignment.ToString(),
-                                ["VerticalAlignment"] = cell.VerticalAlignment.ToString(),
-                                ["IndentLevel"] = cell.IndentLevel,
-                                ["BorderStyle"] = new Dictionary<string, object>
-                                {
-                                    ["top"] = new Dictionary<string, object>
-                                    {
-                                        ["LineStyle"] = SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeTop].LineStyle),
-                                        ["Color"] = ConvertBGRToRGB(SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeTop].Color))
-                                    },
-                                    ["right"] = new Dictionary<string, object>
-                                    {
-                                        ["LineStyle"] = SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeRight].LineStyle),
-                                        ["Color"] = ConvertBGRToRGB(SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeRight].Color))
-                                    },
-                                    ["bottom"] = new Dictionary<string, object>
-                                    {
-                                        ["LineStyle"] = SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeBottom].LineStyle),
-                                        ["Color"] = ConvertBGRToRGB(SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeBottom].Color))
-                                    },
-                                    ["left"] = new Dictionary<string, object>
-                                    {
-                                        ["LineStyle"] = SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeLeft].LineStyle),
-                                        ["Color"] = ConvertBGRToRGB(SafeGetInt(cell.Borders[XlBordersIndex.xlEdgeLeft].Color))
-                                    }
-                                }
-                            };
-                            // 디버깅: 셀의 border 정보 출력
-                            var borderDict = (Dictionary<string, object>)cellStyle["BorderStyle"];
-                            string cellValue = values[i, j]?.ToString() ?? "";
-                            string cellText = GetStyledText(cellValue, cellStyle);
-                            string cellStyleStr = GetCellStyleString(cellStyle);
-                            selectedText.Append($"<td style='{cellStyleStr}'>{cellText}</td>");
-                        }
-                        selectedText.Append("</tr>");
-                    }
-                    selectedText.Append("</table>");
-                }
-                
-                Console.WriteLine($"- 처리된 텍스트:\n{selectedText}");
-                Console.WriteLine("------------------------");
-
-                // 스타일 속성 가져오기
-                Console.WriteLine("스타일 속성 가져오기 시도...");
-                var styleAttributes = new Dictionary<string, object>
-                {
-                    ["FontName"] = selectedRange.Font.Name ?? "Calibri",
-                    ["FontSize"] = selectedRange.Font.Size ?? 11.0,
-                    ["FontWeight"] = SafeGetBoolean(selectedRange.Font.Bold) ? "Bold" : "Normal",
-                    ["FontItalic"] = SafeGetBoolean(selectedRange.Font.Italic),
-                    ["FontStrikethrough"] = SafeGetBoolean(selectedRange.Font.Strikethrough),
-                    ["FontSuperscript"] = SafeGetBoolean(selectedRange.Font.Superscript),
-                    ["FontSubscript"] = SafeGetBoolean(selectedRange.Font.Subscript),
-                    ["FontShadow"] = SafeGetBoolean(selectedRange.Font.Shadow),
-                    ["ForegroundColor"] = ConvertBGRToRGB(SafeGetInt(selectedRange.Font.Color, 0)),
-                    ["BackgroundColor"] = ConvertBGRToRGB(SafeGetInt(selectedRange.Interior.Color, 16777215)),
-                    ["UnderlineStyle"] = SafeGetInt(selectedRange.Font.Underline, 0) == 2 ? "Single" : "None",
-                    ["HorizontalAlignment"] = selectedRange.HorizontalAlignment.ToString() ?? "Left",
-                    ["VerticalAlignment"] = selectedRange.VerticalAlignment.ToString() ?? "Bottom",
-                    ["IndentLevel"] = SafeGetInt(selectedRange.IndentLevel, 0)
-                };
-                Console.WriteLine("스타일 속성 가져오기 완료");
-
-                return (selectedText.ToString(), styleAttributes);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Excel 데이터 읽기 오류 발생: {ex.Message}");
                 Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 LogWindow.Instance.Log($"Excel 데이터 읽기 오류: {ex.Message}");
-                return (string.Empty, new Dictionary<string, object>());
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
             }
             finally
             {
-                Console.WriteLine("COM 객체 해제 시작...");
                 if (_worksheet != null) Marshal.ReleaseComObject(_worksheet);
                 if (_workbook != null) Marshal.ReleaseComObject(_workbook);
                 if (_excelApp != null) Marshal.ReleaseComObject(_excelApp);
-                Console.WriteLine("COM 객체 해제 완료");
             }
         }
 

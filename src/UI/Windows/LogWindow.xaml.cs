@@ -396,6 +396,7 @@ public partial class LogWindow : Window
             Log($"  - 파일명: {chatData.CurrentProgram.FileName}");
             Log($"  - 파일 경로: {chatData.CurrentProgram.FilePath}");
             Log($"  - 컨텍스트: {chatData.CurrentProgram.Context}");
+            Log($"  - 위치: {chatData.CurrentProgram.Position}");
 
             // 대상 프로그램 정보 (있는 경우)
             if (chatData.TargetProgram != null)

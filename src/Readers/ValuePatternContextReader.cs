@@ -5,7 +5,7 @@ namespace overlay_gpt
 {
     public class ValuePatternContextReader : BaseContextReader
     {
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             var styleAttributes = new Dictionary<string, object>();
             AutomationElement element = AutomationElement.FocusedElement;
@@ -13,19 +13,17 @@ namespace overlay_gpt
             if (element == null)
             {
                 LogWindow.Instance.Log("No focused element");
-                return (string.Empty, styleAttributes);
+                return (string.Empty, styleAttributes, string.Empty);
             }
 
             if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObj))
             {
-                ValuePattern valuePattern = (ValuePattern)valuePatternObj;
-                var value = valuePattern.Current.Value;
-                LogWindow.Instance.Log($"ValuePattern: {value} (길이: {value.Length})");
-                return (value, styleAttributes);
+                var valuePattern = (ValuePattern)valuePatternObj;
+                string text = valuePattern.Current.Value;
+                return (text, styleAttributes, string.Empty);
             }
 
-            LogWindow.Instance.Log("No value pattern found");
-            return (string.Empty, styleAttributes);
+            return (string.Empty, styleAttributes, string.Empty);
         }
     }
 } 

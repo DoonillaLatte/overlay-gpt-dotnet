@@ -108,7 +108,8 @@ namespace overlay_gpt
                     VolumeId = fileInfo.VolumeId,
                     FileType = fileInfo.FileType,
                     FileName = fileInfo.FileName,
-                    FilePath = fileInfo.FilePath
+                    FilePath = fileInfo.FilePath,
+                    Position = result.LineNumber
                 };
                 
                 LogWindow.Instance.Log($"Program Info - ID: {programInfo.FileId}, Volume: {programInfo.VolumeId}, Type: {programInfo.FileType}, Name: {programInfo.FileName}, Path: {programInfo.FilePath}");

@@ -7,7 +7,7 @@ namespace overlay_gpt
 {
     public class TextPatternContextReader : BaseContextReader
     {
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             var styleAttributes = new Dictionary<string, object>();
             AutomationElement element = AutomationElement.FocusedElement;
@@ -15,57 +15,28 @@ namespace overlay_gpt
             if (element == null)
             {
                 LogWindow.Instance.Log("No focused element");
-                return (string.Empty, styleAttributes);
+                return (string.Empty, styleAttributes, string.Empty);
             }
 
             if (element.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObj))
             {
                 var textPattern = (TextPattern)textPatternObj;
                 var selections = textPattern.GetSelection();
-
-                if (selections != null && selections.Length > 0 && selections[0] != null && selections[0].GetText(-1).Length > 0)
+                
+                if (selections.Length > 0)
                 {
-                    var selectedRange = selections[0];
-                    string text = selectedRange.GetText(-1);
-                    LogWindow.Instance.Log($"TextPattern (선택): {text} (길이: {text.Length})");
+                    var range = selections[0];
+                    string text = range.GetText(-1);
+                    styleAttributes = GetStyleAttributes(range);
                     
-                    // 각 문자별로 스타일 정보 수집
-                    var charStyles = new List<Dictionary<string, object>>();
-                    for (int i = 0; i < text.Length; i++)
-                    {
-                        var charRange = selectedRange.Clone();
-                        charRange.Move(TextUnit.Character, i);
-                        charRange.ExpandToEnclosingUnit(TextUnit.Character);
-                        charStyles.Add(GetStyleAttributes(charRange));
-                    }
+                    // 줄 번호 정보 가져오기 (TextPattern에서는 줄 번호를 직접 가져올 수 없으므로 빈 문자열 반환)
+                    string lineNumber = string.Empty;
                     
-                    // 문자별 스타일 정보를 포함하여 로깅
-                    LogWindow.Instance.LogWithStylePerChar(text, charStyles);
-                    return (text, styleAttributes);
-                }
-                else
-                {
-                    var fullText = textPattern.DocumentRange.GetText(-1);
-                    LogWindow.Instance.Log($"TextPattern (전체): {fullText} (길이: {fullText.Length})");
-                    
-                    // 각 문자별로 스타일 정보 수집
-                    var charStyles = new List<Dictionary<string, object>>();
-                    for (int i = 0; i < fullText.Length; i++)
-                    {
-                        var charRange = textPattern.DocumentRange.Clone();
-                        charRange.Move(TextUnit.Character, i);
-                        charRange.ExpandToEnclosingUnit(TextUnit.Character);
-                        charStyles.Add(GetStyleAttributes(charRange));
-                    }
-                    
-                    // 문자별 스타일 정보를 포함하여 로깅
-                    LogWindow.Instance.LogWithStylePerChar(fullText, charStyles);
-                    return (fullText, styleAttributes);
+                    return (text, styleAttributes, lineNumber);
                 }
             }
 
-            LogWindow.Instance.Log("No text pattern found");
-            return (string.Empty, styleAttributes);
+            return (string.Empty, styleAttributes, string.Empty);
         }
     }
 } 

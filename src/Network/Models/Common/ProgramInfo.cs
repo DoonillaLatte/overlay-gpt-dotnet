@@ -22,6 +22,9 @@ namespace overlay_gpt.Network.Models.Common
 
         [JsonPropertyName("filePath")]
         public string FilePath { get; set; } = string.Empty;
+
+        [JsonPropertyName("position")]
+        public string Position { get; set; } = string.Empty;
     } 
 };
 

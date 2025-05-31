@@ -23,7 +23,7 @@ namespace overlay_gpt
             {   
                 Console.WriteLine("WordContextReader 생성 시도");
                 var wordReader = new WordContextReader();
-                var (text, _) = wordReader.GetSelectedTextWithStyle();
+                var (text, _, _) = wordReader.GetSelectedTextWithStyle();
                 if (!string.IsNullOrEmpty(text))
                 {
                     Console.WriteLine("WordContextReader 생성 성공");
@@ -40,12 +40,12 @@ namespace overlay_gpt
             try
             {   
                 Console.WriteLine("ExcelContextReader 생성 시도");
-                var reader = new ExcelContextReader();
-                var (text, _) = reader.GetSelectedTextWithStyle();
+                var excelReader = new ExcelContextReader();
+                var (text, _, _) = excelReader.GetSelectedTextWithStyle();
                 if (!string.IsNullOrEmpty(text))
                 {
                     Console.WriteLine("ExcelContextReader 생성 성공");
-                    return reader;
+                    return excelReader;
                 }
                 throw new InvalidOperationException("No text selected in Excel");
             }

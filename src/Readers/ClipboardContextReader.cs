@@ -76,33 +76,11 @@ namespace overlay_gpt
             }
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             var styleAttributes = new Dictionary<string, object>();
-            string selectedText = string.Empty;
-
-            try
-            {
-                // 먼저 복사 시도
-                CopyToClipboard();
-
-                // 클립보드에서 텍스트 읽기
-                if (Clipboard.ContainsText())
-                {
-                    selectedText = Clipboard.GetText();
-                    LogWindow.Instance.Log($"클립보드 텍스트: {selectedText} (길이: {selectedText.Length})");
-                }
-                else
-                {
-                    LogWindow.Instance.Log("클립보드에 텍스트가 없습니다.");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                LogWindow.Instance.Log($"클립보드 읽기 오류: {ex.Message}");
-            }
-
-            return (selectedText, styleAttributes);
+            string text = Clipboard.GetText();
+            return (text, styleAttributes, string.Empty);
         }
     }
 } 
