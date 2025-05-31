@@ -109,6 +109,10 @@ namespace overlay_gpt.Network
                     return;
                 }
 
+                // HTML 형식인지 확인
+                bool isHtml = message.Contains("<") && message.Contains(">");
+                string textType = isHtml ? "text_to_apply" : "text_plain";
+
                 var chatData = Services.ChatDataManager.Instance.GetChatDataById(chatId);
                 if (chatData == null)
                 {
@@ -120,7 +124,7 @@ namespace overlay_gpt.Network
                 {
                     chatData.Title = title;
                 }
-                chatData.Texts.Add(new TextData { Type = "text_plain", Content = message });
+                chatData.Texts.Add(new TextData { Type = textType, Content = message });
                 if(chatData.TargetProgram == null) 
                 {
                     chatData.CurrentProgram.Context = message;
@@ -139,7 +143,7 @@ namespace overlay_gpt.Network
                     GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                     CurrentProgram = chatData.CurrentProgram,
                     TargetProgram = chatData.TargetProgram,
-                    Texts = new List<TextData> { new TextData { Type = "text_plain", Content = message } }
+                    Texts = new List<TextData> { new TextData { Type = textType, Content = message } }
                 };
 
                 var vueServer = MainWindow.Instance.VueServer;
