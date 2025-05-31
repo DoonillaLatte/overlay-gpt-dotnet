@@ -26,6 +26,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="7.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="7.0.0" />
     <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.59" />
   </ItemGroup>
 
   <ItemGroup>

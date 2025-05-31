@@ -120,6 +120,14 @@ namespace overlay_gpt.Network
                     chatData.Title = title;
                 }
                 chatData.Texts.Add(new TextData { Type = "text_plain", Content = message });
+                if(chatData.TargetProgram == null) 
+                {
+                    chatData.CurrentProgram.Context = message;
+                }
+                else
+                {
+                    chatData.TargetProgram.Context = message;
+                }
                 Console.WriteLine($"ChatData {chatId}에 메시지가 추가되었습니다.");
 
                 // Vue로 display_text 메시지 전송

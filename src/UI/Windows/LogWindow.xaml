@@ -91,6 +91,8 @@
                         Margin="5,0,0,0"
                         Click="ShowAllChatsButton_Click"/>
 
+                <Button x:Name="ApplyContextButton" Content="컨텍스트 적용 테스트" Click="ApplyContextButton_Click" Margin="5"/>
+
                 <TextBlock Grid.Row="2" Grid.Column="0" 
                           Text="파라미터" 
                           Margin="0,10,0,5"/>

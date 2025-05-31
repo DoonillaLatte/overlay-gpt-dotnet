@@ -25,6 +25,9 @@ namespace overlay_gpt.Network.Models.Common
 
         [JsonPropertyName("position")]
         public string Position { get; set; } = string.Empty;
+
+        [JsonPropertyName("generated_context")]
+        public string GeneratedContext { get; set; } = string.Empty;
     } 
 };
 
