@@ -5,12 +5,122 @@ using SocketIOClient;
 using Newtonsoft.Json.Linq;
 using overlay_gpt.Network.Models.Common;
 using overlay_gpt.Network.Models.Vue;
+using overlay_gpt.Services;
+using System.Runtime.InteropServices;
+using System.IO;
+using System.Text;
 
 namespace overlay_gpt.Network
 {
     public class ProcessFlaskMessage
     {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandle(
+            IntPtr hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        [DllImport("ntdll.dll", SetLastError = true)]
+        private static extern int NtCreateFile(
+            out IntPtr FileHandle,
+            uint DesiredAccess,
+            ref OBJECT_ATTRIBUTES ObjectAttributes,
+            out IO_STATUS_BLOCK IoStatusBlock,
+            IntPtr AllocationSize,
+            uint FileAttributes,
+            uint ShareAccess,
+            uint CreateDisposition,
+            uint CreateOptions,
+            IntPtr EaBuffer,
+            uint EaLength);
+
+        [DllImport("ntdll.dll", SetLastError = true)]
+        private static extern int NtQueryInformationFile(
+            IntPtr FileHandle,
+            out IO_STATUS_BLOCK IoStatusBlock,
+            IntPtr FileInformation,
+            uint Length,
+            int FileInformationClass);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint dwFileAttributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftCreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftLastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ftLastWriteTime;
+            public uint dwVolumeSerialNumber;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
+            public uint nNumberOfLinks;
+            public uint nFileIndexHigh;
+            public uint nFileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct OBJECT_ATTRIBUTES
+        {
+            public int Length;
+            public IntPtr RootDirectory;
+            public IntPtr ObjectName;
+            public uint Attributes;
+            public IntPtr SecurityDescriptor;
+            public IntPtr SecurityQualityOfService;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_STATUS_BLOCK
+        {
+            public uint Status;
+            public IntPtr Information;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ID_BOTH_DIR_INFO
+        {
+            public uint NextEntryOffset;
+            public uint FileIndex;
+            public long CreationTime;
+            public long LastAccessTime;
+            public long LastWriteTime;
+            public long ChangeTime;
+            public long EndOfFile;
+            public long AllocationSize;
+            public uint FileAttributes;
+            public uint FileNameLength;
+            public uint EaSize;
+            public byte ShortNameLength;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 12)]
+            public byte[] ShortName;
+            public long FileId;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1)]
+            public byte[] FileName;
+        }
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_OPEN = 1;
+        private const uint FILE_OPEN_BY_FILE_ID = 0x00002000;
+        private const uint FILE_READ_ATTRIBUTES = 0x0080;
+        private const uint FILE_SHARE_DELETE = 0x00000004;
+        private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
+        private const uint OBJ_CASE_INSENSITIVE = 0x00000040;
+        private const int FileIdBothDirectoryInformation = 37;
+
         private readonly Dictionary<string, Func<JObject, Task>> _commandHandlers;
+        private readonly NtfsFileFinder _fileFinder;
 
         public ProcessFlaskMessage()
         {
@@ -23,6 +133,7 @@ namespace overlay_gpt.Network
                 { "generated_response", HandleGeneratedResponse },
                 { "response_workflows", HandleResponseWorkflows }
             };
+            _fileFinder = new NtfsFileFinder();
         }
 
         public async Task ProcessMessage(SocketIOResponse response)
@@ -168,11 +279,63 @@ namespace overlay_gpt.Network
             try
             {
                 Console.WriteLine("HandleResponseWorkflows 시작");
-                // TODO: 워크플로우 응답 처리 로직 구현
+                var chatId = data["chat_id"]?.Value<int>() ?? -1;
+                var similarProgramIds = data["similar_program_ids"]?.ToObject<List<List<long>>>() ?? new List<List<long>>();
+                var status = data["status"]?.ToString();
+                string fileType = data["file_type"]?.ToString();
+
+                Console.WriteLine($"받은 데이터 - chatId: {chatId}, similarProgramIds: {string.Join(", ", similarProgramIds.Select(x => $"[{x[0]}, {x[1]}]"))}");
+
+                var chatData = Services.ChatDataManager.Instance.GetChatDataById(chatId);
+                if (chatData == null)
+                {
+                    Console.WriteLine($"chat_id {chatId}에 해당하는 ChatData를 찾을 수 없습니다.");
+                    return;
+                }
+
+                // 파일 정보를 찾아서 변환
+                var convertedProgramIds = new List<List<string>>();
+
+                foreach (var programId in similarProgramIds)
+                {
+                    var fileId = programId[0];
+                    var volumeId = programId[1];
+
+                    var foundFile = _fileFinder.FindFileByFileIdAndVolumeId(fileId, volumeId);
+                    if (foundFile != null)
+                    {
+                        var fileName = Path.GetFileName(foundFile);
+                        var filePath = foundFile;
+
+                        convertedProgramIds.Add(new List<string> { fileName, filePath });
+                    }
+                }
+
+                // Vue로 메시지 전송
+                var responseData = new
+                {
+                    command = "response_top_workflows",
+                    chat_id = chatId,
+                    file_type = fileType,
+                    similar_program_ids = convertedProgramIds,
+                    status = status
+                };
+
+                var vueServer = MainWindow.Instance.VueServer;
+                if (vueServer != null)
+                {
+                    await vueServer.SendMessageToAll(responseData);
+                    Console.WriteLine($"Vue로 response_top_workflows 메시지 전송 완료: chat_id {chatId}");
+                }
+                else
+                {
+                    Console.WriteLine("Vue 서버가 초기화되지 않았습니다.");
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"워크플로우 응답 처리 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
             }
         }
 
