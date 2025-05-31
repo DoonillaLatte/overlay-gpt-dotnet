@@ -294,7 +294,7 @@ namespace overlay_gpt.Network
                 }
 
                 // 파일 정보를 찾아서 변환
-                var convertedProgramIds = new List<List<string>>();
+                var convertedPrograms = new List<List<string>>();
 
                 foreach (var programId in similarProgramIds)
                 {
@@ -307,7 +307,7 @@ namespace overlay_gpt.Network
                         var fileName = Path.GetFileName(foundFile);
                         var filePath = foundFile;
 
-                        convertedProgramIds.Add(new List<string> { fileName, filePath });
+                        convertedPrograms.Add(new List<string> { fileName, filePath });
                     }
                 }
 
@@ -317,7 +317,7 @@ namespace overlay_gpt.Network
                     command = "response_top_workflows",
                     chat_id = chatId,
                     file_type = fileType,
-                    similar_program_ids = convertedProgramIds,
+                    similar_programs = convertedPrograms,
                     status = status
                 };
 
