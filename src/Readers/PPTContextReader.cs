@@ -147,6 +147,11 @@ namespace overlay_gpt
                 result = $"<i>{result}</i>";
             if (styleAttributes.ContainsKey("FontStrikethrough") && styleAttributes["FontStrikethrough"] is MsoTriState strikethrough && strikethrough == MsoTriState.msoTrue)
                 result = $"<s>{result}</s>";
+            if (styleAttributes.ContainsKey("FontSize"))
+            {
+                double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
+                result = $"<span style='font-size: {fontSize}pt'>{result}</span>";
+            }
             return result;
         }
 
@@ -191,7 +196,225 @@ namespace overlay_gpt
                 }
             }
 
+            if (styleAttributes.ContainsKey("TextAlign"))
+            {
+                string textAlign = styleAttributes["TextAlign"]?.ToString() ?? "left";
+                styleList.Add($"text-align: {textAlign}");
+            }
+
+            if (styleAttributes.ContainsKey("VerticalAlign"))
+            {
+                string verticalAlign = styleAttributes["VerticalAlign"]?.ToString() ?? "top";
+                styleList.Add($"vertical-align: {verticalAlign}");
+            }
+
+            // 텍스트 정렬을 위한 추가 스타일
+            styleList.Add("display: flex");
+            styleList.Add("align-items: center");
+            styleList.Add("justify-content: flex-start");
+
+            if (styleAttributes["TextAlign"]?.ToString() == "center")
+            {
+                styleList.Add("justify-content: center");
+            }
+            else if (styleAttributes["TextAlign"]?.ToString() == "right")
+            {
+                styleList.Add("justify-content: flex-end");
+            }
+
+            if (styleAttributes["VerticalAlign"]?.ToString() == "middle")
+            {
+                styleList.Add("align-items: center");
+            }
+            else if (styleAttributes["VerticalAlign"]?.ToString() == "bottom")
+            {
+                styleList.Add("align-items: flex-end");
+            }
+
             return string.Join("; ", styleList);
+        }
+
+        private string GetShapeStyleString(Microsoft.Office.Interop.PowerPoint.Shape shape)
+        {
+            var styleList = new List<string>();
+            
+            // 위치와 크기
+            styleList.Add($"position: absolute");
+            styleList.Add($"left: {shape.Left}px");
+            styleList.Add($"top: {shape.Top}px");
+            styleList.Add($"width: {shape.Width}px");
+            styleList.Add($"height: {shape.Height}px");
+            
+            // 회전
+            if (shape.Rotation != 0)
+            {
+                styleList.Add($"transform: rotate({shape.Rotation}deg)");
+            }
+
+            // 투명도
+            if (shape.Fill.Transparency > 0)
+            {
+                double opacity = 1 - (shape.Fill.Transparency / 100.0);
+                styleList.Add($"opacity: {opacity}");
+            }
+            
+            // 배경색 및 채우기
+            if (shape.Fill.Visible == MsoTriState.msoTrue)
+            {
+                if (shape.Fill.Type == MsoFillType.msoFillGradient)
+                {
+                    // 그라데이션 처리
+                    var gradientStops = new List<string>();
+                    for (int i = 1; i <= shape.Fill.GradientStops.Count; i++)
+                    {
+                        var stop = shape.Fill.GradientStops[i];
+                        int rgbColor = ConvertColorToRGB(stop.Color.RGB);
+                        string hexColor = $"#{rgbColor:X6}";
+                        gradientStops.Add($"{hexColor} {stop.Position * 100}%");
+                    }
+                    string gradientDirection = shape.Fill.GradientAngle == 0 ? "to right" : 
+                                            shape.Fill.GradientAngle == 90 ? "to bottom" :
+                                            shape.Fill.GradientAngle == 180 ? "to left" :
+                                            "to top";
+                    styleList.Add($"background: linear-gradient({gradientDirection}, {string.Join(", ", gradientStops)})");
+                }
+                else if (shape.Fill.ForeColor.RGB != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(shape.Fill.ForeColor.RGB);
+                    string hexColor = $"#{rgbColor:X6}";
+                    styleList.Add($"background-color: {hexColor}");
+                }
+            }
+            
+            // 테두리
+            if (shape.Line.Visible == MsoTriState.msoTrue)
+            {
+                int borderColor = ConvertColorToRGB(shape.Line.ForeColor.RGB);
+                string borderHexColor = $"#{borderColor:X6}";
+                string borderStyle = "solid"; // 기본값
+                if (shape.Line.DashStyle != MsoLineDashStyle.msoLineSolid)
+                {
+                    borderStyle = "dashed";
+                }
+                styleList.Add($"border: {shape.Line.Weight}px {borderStyle} {borderHexColor}");
+            }
+
+            // 그림자 효과
+            if (shape.Shadow.Visible == MsoTriState.msoTrue)
+            {
+                int shadowColor = ConvertColorToRGB(shape.Shadow.ForeColor.RGB);
+                string shadowHexColor = $"#{shadowColor:X6}";
+                double shadowBlur = shape.Shadow.Size;
+                double shadowOffsetX = shape.Shadow.OffsetX;
+                double shadowOffsetY = shape.Shadow.OffsetY;
+                double shadowTransparency = shape.Shadow.Transparency / 100.0;
+                styleList.Add($"box-shadow: {shadowOffsetX}px {shadowOffsetY}px {shadowBlur}px rgba({shadowColor >> 16 & 0xFF}, {shadowColor >> 8 & 0xFF}, {shadowColor & 0xFF}, {1 - shadowTransparency})");
+            }
+
+            // 모서리 둥글기
+            if (shape.AutoShapeType != MsoAutoShapeType.msoShapeRectangle)
+            {
+                // 자동 도형의 경우 모서리 둥글기 적용
+                styleList.Add($"border-radius: {Math.Min(shape.Width, shape.Height) * 0.1}px");
+            }
+
+            // 3D 효과
+            if (shape.ThreeD.Visible == MsoTriState.msoTrue)
+            {
+                styleList.Add($"transform-style: preserve-3d");
+                styleList.Add($"perspective: 1000px");
+                styleList.Add($"transform: rotateX({shape.ThreeD.RotationX}deg) rotateY({shape.ThreeD.RotationY}deg)");
+            }
+
+            // Z-인덱스 (레이어 순서)
+            styleList.Add($"z-index: {shape.ZOrderPosition}");
+
+            return string.Join("; ", styleList);
+        }
+
+        private string GetShapeType(Microsoft.Office.Interop.PowerPoint.Shape shape)
+        {
+            switch (shape.Type)
+            {
+                case MsoShapeType.msoAutoShape:
+                    return "div";
+                case MsoShapeType.msoPicture:
+                    return "img";
+                case MsoShapeType.msoTextBox:
+                    return "div";
+                case MsoShapeType.msoLine:
+                    return "div";
+                case MsoShapeType.msoChart:
+                    return "div";
+                case MsoShapeType.msoTable:
+                    return "table";
+                case MsoShapeType.msoSmartArt:
+                    return "div";
+                default:
+                    return "div";
+            }
+        }
+
+        private string ConvertShapeToHtml(Microsoft.Office.Interop.PowerPoint.Shape shape)
+        {
+            string shapeType = GetShapeType(shape);
+            string styleString = GetShapeStyleString(shape);
+            string content = string.Empty;
+
+            if (shape.HasTextFrame == MsoTriState.msoTrue)
+            {
+                var textFrame = shape.TextFrame;
+                var textRange = textFrame.TextRange;
+                var styleAttributes = new Dictionary<string, object>();
+                
+                // 텍스트 스타일 속성 가져오기
+                styleAttributes["FontSize"] = textRange.Font.Size;
+                styleAttributes["FontName"] = textRange.Font.Name;
+                styleAttributes["FontWeight"] = textRange.Font.Bold == MsoTriState.msoTrue ? "Bold" : "Normal";
+                styleAttributes["FontItalic"] = textRange.Font.Italic;
+                styleAttributes["UnderlineStyle"] = textRange.Font.Underline;
+                styleAttributes["ForegroundColor"] = textRange.Font.Color.RGB;
+                
+                // 텍스트 정렬 설정
+                switch (textRange.ParagraphFormat.Alignment)
+                {
+                    case PpParagraphAlignment.ppAlignCenter:
+                        styleAttributes["TextAlign"] = "center";
+                        break;
+                    case PpParagraphAlignment.ppAlignRight:
+                        styleAttributes["TextAlign"] = "right";
+                        break;
+                    case PpParagraphAlignment.ppAlignJustify:
+                        styleAttributes["TextAlign"] = "justify";
+                        break;
+                    default:
+                        styleAttributes["TextAlign"] = "left";
+                        break;
+                }
+
+                switch (textFrame.VerticalAnchor)
+                {
+                    case MsoVerticalAnchor.msoAnchorMiddle:
+                        styleAttributes["VerticalAlign"] = "middle";
+                        break;
+                    case MsoVerticalAnchor.msoAnchorBottom:
+                        styleAttributes["VerticalAlign"] = "bottom";
+                        break;
+                    default:
+                        styleAttributes["VerticalAlign"] = "top";
+                        break;
+                }
+                
+                string textStyle = GetTextStyleString(styleAttributes);
+                string styledText = GetStyledText(textRange.Text, styleAttributes);
+                content = $"<div style='{textStyle}'>{styledText}</div>";
+            }
+            else if (shape.Type == MsoShapeType.msoPicture)
+            {
+                content = $"<img src='data:image/png;base64,...' alt='Image' />";
+            }
+
+            return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
         }
 
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
@@ -271,30 +494,8 @@ namespace overlay_gpt
 
                     foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in selection.ShapeRange)
                     {
-                        if (shape.HasTextFrame == MsoTriState.msoTrue)
-                        {
-                            var textFrame = shape.TextFrame;
-                            var textRange = textFrame.TextRange;
-                            
-                            // 텍스트 스타일 정보 수집
-                            var font = textRange.Font;
-                            styleAttributes["FontName"] = font.Name;
-                            styleAttributes["FontSize"] = font.Size;
-                            styleAttributes["FontWeight"] = font.Bold == MsoTriState.msoTrue ? "Bold" : "Normal";
-                            styleAttributes["FontItalic"] = font.Italic;
-                            styleAttributes["ForegroundColor"] = font.Color.RGB;
-
-                            string text = textRange.Text;
-                            string styledText = GetStyledText(text, styleAttributes);
-                            string styleString = GetTextStyleString(styleAttributes);
-                            
-                            if (!string.IsNullOrEmpty(styleString))
-                            {
-                                styledText = $"<span style='{styleString}'>{styledText}</span>";
-                            }
-                            
-                            styledTextBuilder.Append(styledText);
-                        }
+                        string shapeHtml = ConvertShapeToHtml(shape);
+                        styledTextBuilder.Append(shapeHtml);
                     }
 
                     string selectedText = styledTextBuilder.ToString();
