@@ -12,6 +12,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Forms;
+using overlay_gpt.Services;
 
 namespace overlay_gpt.Network
 {
@@ -176,7 +177,7 @@ namespace overlay_gpt.Network
             {
                 var chatId = data["chat_id"]?.Value<int>();
                 var generatedTimestamp = data["generated_timestamp"]?.ToString(Newtonsoft.Json.Formatting.None).Trim('"');
-
+                
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] JSON에서 가져온 타임스탬프: \"{generatedTimestamp}\"");
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 타임스탬프 타입: {generatedTimestamp?.GetType().FullName}");
 
@@ -347,31 +348,27 @@ namespace overlay_gpt.Network
                 var filePath = targetProgram[1];
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
 
-                var ntfsFinder = new NtfsFileFinder();
-                var fileInfo = ntfsFinder.GetFileInfo(filePath);
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 조회 - FileId: {fileInfo.FileId}, VolumeId: {fileInfo.VolumeId}");
-                
-                // NTFS File ID와 Volume ID를 사용하여 파일 정보 업데이트
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] NTFS 파일 검색 시작");
-                var fullPath = ntfsFinder.FindFileByFileIdAndVolumeId((long)fileInfo.FileId, fileInfo.VolumeId);
-                if (string.IsNullOrEmpty(fullPath))
-                {
-                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 오류: NTFS 파일 검색 실패");
-                    throw new Exception("파일 정보를 찾을 수 없습니다.");
-                }
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] NTFS 파일 검색 성공 - 전체 경로: {fullPath}");
-
                 // 파일 내용 읽기
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 시작");
                 var contextReader = new TargetProgContextReader();
-                string fileContent = await contextReader.ReadFileContent(fullPath, fileType);
+                string fileContent = await contextReader.ReadFileContent(filePath, fileType);
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 완료 - 크기: {fileContent.Length} 문자");
+
+                // 파일 정보 가져오기
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 시작");
+                var ntfsFileFinder = new NtfsFileFinder();
+                var fileInfo = ntfsFileFinder.GetFileInfo(filePath);
+                if (fileInfo.FileId == 0 || fileInfo.VolumeId == 0)
+                {
+                    throw new Exception("파일 정보를 가져올 수 없습니다.");
+                }
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 완료");
 
                 // ChatData의 target_program 업데이트
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 시작");
                 chatData.TargetProgram = new ProgramInfo
                 {
-                    FilePath = fullPath,
+                    FilePath = filePath,
                     FileType = fileType,
                     FileId = fileInfo.FileId,
                     VolumeId = fileInfo.VolumeId,

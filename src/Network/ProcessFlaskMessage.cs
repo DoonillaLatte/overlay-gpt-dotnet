@@ -306,10 +306,18 @@ namespace overlay_gpt.Network
                     {
                         var fileName = Path.GetFileName(foundFile);
                         var filePath = foundFile;
+                        
+                        
+                        
 
                         convertedPrograms.Add(new List<string> { fileName, filePath });
                     }
                 }
+                
+                // 임시 파일 경로 생성. 나중에 지울 것
+                convertedPrograms.Add(new List<string> { "임시파일1.확장자", "임시파일경로1/임시파일경로2/임시파일1.확장자" });
+                convertedPrograms.Add(new List<string> { "임시파일2.확장자", "임시파일경로1/임시파일경로2/임시파일2.확장자" });
+                convertedPrograms.Add(new List<string> { "임시파일3.확장자", "임시파일경로1/임시파일경로2/임시파일3.확장자" });
 
                 // Vue로 메시지 전송
                 var responseData = new
