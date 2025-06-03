@@ -191,5 +191,92 @@ namespace overlay_gpt.Services
 
             return null;
         }
+
+        public (ulong FileId, uint VolumeId) GetFileInfo(string filePath)
+        {
+            try
+            {
+                Console.WriteLine($"GetFileInfo 호출 - 파일 경로: {filePath}");
+                
+                if (!File.Exists(filePath))
+                {
+                    Console.WriteLine("파일이 존재하지 않습니다.");
+                    throw new FileNotFoundException("파일을 찾을 수 없습니다.", filePath);
+                }
+
+                IntPtr handle = CreateFile(
+                    filePath,
+                    FILE_READ_ATTRIBUTES,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    IntPtr.Zero,
+                    FILE_OPEN,
+                    FILE_ATTRIBUTE_NORMAL,
+                    IntPtr.Zero);
+
+                if (handle.ToInt64() == -1)
+                {
+                    Console.WriteLine($"CreateFile 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
+                    throw new IOException("파일을 열 수 없습니다.");
+                }
+
+                try
+                {
+                    BY_HANDLE_FILE_INFORMATION fileInfo;
+                    if (GetFileInformationByHandle(handle, out fileInfo))
+                    {
+                        ulong fileId = ((ulong)fileInfo.nFileIndexHigh << 32) | fileInfo.nFileIndexLow;
+                        Console.WriteLine($"파일 ID 정보 가져오기 성공:");
+                        Console.WriteLine($"- FileId: {fileId}");
+                        Console.WriteLine($"- VolumeId: {fileInfo.dwVolumeSerialNumber}");
+                        return (fileId, fileInfo.dwVolumeSerialNumber);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"GetFileInformationByHandle 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
+                        throw new IOException("파일 정보를 가져올 수 없습니다.");
+                    }
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"파일 ID 가져오기 오류: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                throw;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint dwFileAttributes;
+            public FILETIME ftCreationTime;
+            public FILETIME ftLastAccessTime;
+            public FILETIME ftLastWriteTime;
+            public uint dwVolumeSerialNumber;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
+            public uint nNumberOfLinks;
+            public uint nFileIndexHigh;
+            public uint nFileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint dwLowDateTime;
+            public uint dwHighDateTime;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandle(
+            IntPtr hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
     }
 } 

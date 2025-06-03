@@ -417,7 +417,7 @@ namespace overlay_gpt
             return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             try
             {
@@ -482,8 +482,17 @@ namespace overlay_gpt
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    var selection = _pptApp.ActiveWindow?.Selection;
-                    if (selection == null)
+                    Microsoft.Office.Interop.PowerPoint.ShapeRange? shapes;
+                    if (readAllContent)
+                    {
+                        shapes = _slide.Shapes.Range();
+                    }
+                    else
+                    {
+                        shapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
+                    }
+
+                    if (shapes == null)
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
@@ -492,7 +501,7 @@ namespace overlay_gpt
                     var styledTextBuilder = new StringBuilder();
                     var styleAttributes = new Dictionary<string, object>();
 
-                    foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in selection.ShapeRange)
+                    foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in shapes)
                     {
                         string shapeHtml = ConvertShapeToHtml(shape);
                         styledTextBuilder.Append(shapeHtml);

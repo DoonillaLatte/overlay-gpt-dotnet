@@ -251,7 +251,7 @@ namespace overlay_gpt.Network
                 {
                     ChatId = chatId,
                     Title = title,
-                    GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    GeneratedTimestamp = chatData.GeneratedTimestamp,
                     CurrentProgram = chatData.CurrentProgram,
                     TargetProgram = chatData.TargetProgram,
                     Texts = new List<TextData> { new TextData { Type = textType, Content = message } }
