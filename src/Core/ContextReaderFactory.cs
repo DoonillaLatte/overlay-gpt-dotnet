@@ -53,6 +53,24 @@ namespace overlay_gpt
             {
                 Console.WriteLine($"Excel 관련 오류 발생: {e.Message}");
             }
+
+            // PowerPoint 리더 추가
+            try
+            {   
+                Console.WriteLine("PPTContextReader 생성 시도");
+                var pptReader = new PPTContextReader();
+                var (text, _, _) = pptReader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine("PPTContextReader 생성 성공");
+                    return pptReader;
+                }
+                throw new InvalidOperationException("No text selected in PowerPoint");
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"PowerPoint 관련 오류 발생: {e.Message}");
+            }
                 
             // TextBox나 ValueBox일 때 포커스 여부 확인
             if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 
