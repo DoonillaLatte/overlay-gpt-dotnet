@@ -212,31 +212,52 @@ namespace overlay_gpt
                         else
                         {
                             Console.WriteLine($"HTML 태그 노드 처리 - 태그: {node.Name}");
-                            var style = node.GetAttributeValue("style", "");
-                            Console.WriteLine($"스타일 속성: {style}");
+                            var style = "";
+                            
+                            // 모든 자식 노드의 스타일을 수집
+                            var allStyles = new List<string>();
+                            foreach (var childNode in node.DescendantsAndSelf())
+                            {
+                                if (childNode.Attributes["style"] != null)
+                                {
+                                    allStyles.Add(childNode.Attributes["style"].Value);
+                                }
+                            }
+                            
+                            // 모든 스타일을 하나로 합침
+                            style = string.Join(";", allStyles);
+                            Console.WriteLine($"수집된 스타일: {style}");
                             
                             // 먼저 텍스트를 삽입
+                            Console.WriteLine($"삽입할 텍스트: {node.InnerText}");
                             currentNodeRange.Text = node.InnerText;
                             
                             // 텍스트 삽입 후 범위 다시 설정
                             currentNodeRange = _document.Range(wordRange.Start, wordRange.Start + node.InnerText.Length);
+                            Console.WriteLine($"텍스트 삽입 후 범위: 시작={currentNodeRange.Start}, 끝={currentNodeRange.End}");
                             
                             var font = currentNodeRange.Font;
                             Console.WriteLine("폰트 객체 가져오기 성공");
 
                             // 스타일 속성 파싱
                             var styleAttributes = style.Split(';')
+                                .Where(s => !string.IsNullOrWhiteSpace(s))
                                 .Select(s => s.Trim().Split(':'))
                                 .Where(p => p.Length == 2)
                                 .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
 
                             Console.WriteLine($"파싱된 스타일 속성 수: {styleAttributes.Count}");
+                            foreach (var attr in styleAttributes)
+                            {
+                                Console.WriteLine($"스타일 속성: {attr.Key} = {attr.Value}");
+                            }
 
                             // 폰트 패밀리
                             if (styleAttributes.TryGetValue("font-family", out var fontFamily))
                             {
-                                Console.WriteLine($"폰트 패밀리 설정: {fontFamily}");
+                                Console.WriteLine($"폰트 패밀리 설정 시도: {fontFamily}");
                                 font.Name = fontFamily.Trim('\'');
+                                Console.WriteLine($"폰트 패밀리 설정 완료: {font.Name}");
                             }
 
                             // 폰트 크기
@@ -244,8 +265,9 @@ namespace overlay_gpt
                             {
                                 if (fontSize.EndsWith("pt"))
                                 {
-                                    Console.WriteLine($"폰트 크기 설정: {fontSize}");
+                                    Console.WriteLine($"폰트 크기 설정 시도: {fontSize}");
                                     font.Size = float.Parse(fontSize.Replace("pt", ""));
+                                    Console.WriteLine($"폰트 크기 설정 완료: {font.Size}");
                                 }
                             }
 
@@ -254,9 +276,10 @@ namespace overlay_gpt
                             {
                                 if (color.StartsWith("#"))
                                 {
-                                    Console.WriteLine($"텍스트 색상 설정: {color}");
+                                    Console.WriteLine($"텍스트 색상 설정 시도: {color}");
                                     var rgb = int.Parse(color.Substring(1), System.Globalization.NumberStyles.HexNumber);
                                     font.Color = (WdColor)rgb;
+                                    Console.WriteLine($"텍스트 색상 설정 완료: {font.Color}");
                                 }
                             }
 
@@ -265,9 +288,10 @@ namespace overlay_gpt
                             {
                                 if (bgColor.StartsWith("#"))
                                 {
-                                    Console.WriteLine($"배경색 설정: {bgColor}");
+                                    Console.WriteLine($"배경색 설정 시도: {bgColor}");
                                     var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
                                     currentNodeRange.HighlightColorIndex = GetHighlightColorIndexFromRGB(rgb);
+                                    Console.WriteLine($"배경색 설정 완료: {currentNodeRange.HighlightColorIndex}");
                                 }
                             }
 
@@ -297,6 +321,67 @@ namespace overlay_gpt
                             {
                                 Console.WriteLine("취소선 스타일 적용");
                                 font.StrikeThrough = -1;
+                            }
+
+                            // 정렬
+                            if (node.Name == "p")
+                            {
+                                var align = node.GetAttributeValue("align", "");
+                                if (!string.IsNullOrEmpty(align))
+                                {
+                                    switch (align.ToLower())
+                                    {
+                                        case "center":
+                                            currentNodeRange.ParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphCenter;
+                                            break;
+                                        case "right":
+                                            currentNodeRange.ParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphRight;
+                                            break;
+                                        case "left":
+                                            currentNodeRange.ParagraphFormat.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+                                            break;
+                                    }
+                                }
+                            }
+
+                            // 테이블 처리
+                            if (node.Name == "table")
+                            {
+                                var table = _document.Tables.Add(currentNodeRange, node.SelectNodes(".//tr").Count, node.SelectNodes(".//tr[1]/td").Count);
+                                table.Borders.Enable = 1;
+
+                                int rowIndex = 1;
+                                foreach (var row in node.SelectNodes(".//tr"))
+                                {
+                                    int colIndex = 1;
+                                    foreach (var cell in row.SelectNodes(".//td"))
+                                    {
+                                        var cellRange = table.Cell(rowIndex, colIndex).Range;
+                                        cellRange.Text = cell.InnerText.Trim();
+
+                                        // 셀 스타일 적용
+                                        var cellStyle = cell.GetAttributeValue("style", "");
+                                        if (!string.IsNullOrEmpty(cellStyle))
+                                        {
+                                            var cellStyleAttributes = cellStyle.Split(';')
+                                                .Select(s => s.Trim().Split(':'))
+                                                .Where(p => p.Length == 2)
+                                                .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+
+                                            if (cellStyleAttributes.TryGetValue("background-color", out var cellBgColor))
+                                            {
+                                                if (cellBgColor.StartsWith("#"))
+                                                {
+                                                    var rgb = int.Parse(cellBgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
+                                                    cellRange.Shading.BackgroundPatternColor = (WdColor)rgb;
+                                                }
+                                            }
+                                        }
+
+                                        colIndex++;
+                                    }
+                                    rowIndex++;
+                                }
                             }
                         }
                         

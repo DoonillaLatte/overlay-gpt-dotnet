@@ -8,12 +8,14 @@ using System.Diagnostics;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.IO;
+using Forms = System.Windows.Forms;
+using System.Text.RegularExpressions;
 
 namespace overlay_gpt
 {
     public class WordContextReader : BaseContextReader
     {
-        private Application? _wordApp;
+        private Microsoft.Office.Interop.Word.Application? _wordApp;
         private Document? _document;
 
         [DllImport("user32.dll")]
@@ -296,6 +298,70 @@ namespace overlay_gpt
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    }
+
+                    // HTML 형식으로 클립보드 복사 시도
+                    try
+                    {
+                        selection.Copy();
+                        if (Forms.Clipboard.ContainsText(Forms.TextDataFormat.Html))
+                        {
+                            string htmlContent = Forms.Clipboard.GetText(Forms.TextDataFormat.Html);
+                            // HTML 헤더 제거 (StartFragment와 EndFragment 사이의 내용만 사용)
+                            int startIndex = htmlContent.IndexOf("<!--StartFragment-->");
+                            int endIndex = htmlContent.IndexOf("<!--EndFragment-->");
+                            if (startIndex != -1 && endIndex != -1)
+                            {
+                                startIndex += "<!--StartFragment-->".Length;
+                                string htmlText = htmlContent.Substring(startIndex, endIndex - startIndex).Trim();
+                                // MS Word 전용 태그 제거
+                                htmlText = htmlText.Replace("<![if !vml]><![endif]>", "")
+                                                 .Replace("<o:p></o:p>", "")
+                                                 .Replace("<o:p>", "")
+                                                 .Replace("</o:p>", "");
+                                
+                                // VML 관련 태그 제거
+                                htmlText = Regex.Replace(htmlText, @"<!--\[if gte vml.*?\]>.*?<!\[endif\]-->", "", RegexOptions.Singleline);
+                                htmlText = Regex.Replace(htmlText, @"<v:.*?>.*?</v:.*?>", "", RegexOptions.Singleline);
+                                htmlText = Regex.Replace(htmlText, @"<o:.*?>.*?</o:.*?>", "", RegexOptions.Singleline);
+                                
+                                // 이미지 태그 제거
+                                htmlText = Regex.Replace(htmlText, @"<img[^>]*>", "");
+                                
+                                // 모든 class 속성 제거 (따옴표가 있거나 없는 경우 모두 처리)
+                                htmlText = Regex.Replace(htmlText, @"\s+class=(?:""[^""]*""|'[^']*'|[^\s>]*)", "");
+                                
+                                // 불필요한 스타일 속성 제거
+                                htmlText = Regex.Replace(htmlText, @"\s+style='[^']*line-height:\s*normal[^']*'", "");
+                                htmlText = Regex.Replace(htmlText, @"\s+style=""[^""]*line-height:\s*normal[^""]*""", "");
+                                
+                                // Word 전용 스타일 제거
+                                htmlText = Regex.Replace(htmlText, @"mso-[^:;""']*", "");
+                                
+                                // 빈 style 속성 제거
+                                htmlText = Regex.Replace(htmlText, @"\s+style=''", "");
+                                htmlText = Regex.Replace(htmlText, @"\s+style=""""", "");
+                                
+                                // lang 속성이 있는 span 태그 제거
+                                htmlText = Regex.Replace(htmlText, @"<span\s+lang=[^>]*>(.*?)</span>", "$1");
+                                
+                                // 주석 태그 제거
+                                htmlText = Regex.Replace(htmlText, @"<!--.*?-->", "");
+                                
+                                // 불필요한 공백과 엔터 정리
+                                htmlText = Regex.Replace(htmlText, @"\s+", " ");  // 연속된 공백을 하나로
+                                htmlText = Regex.Replace(htmlText, @"\s*>\s*", ">");  // 태그 앞뒤 공백 제거
+                                htmlText = Regex.Replace(htmlText, @"\s*<\s*", "<");  // 태그 앞뒤 공백 제거
+                                htmlText = htmlText.Trim();  // 앞뒤 공백 제거
+                                
+                                return (htmlText, new Dictionary<string, object>(), string.Empty);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"HTML 클립보드 복사 실패: {ex.Message}");
+                        // 실패 시 기존 방식으로 진행
                     }
 
                     string selectedText = selection.Text;

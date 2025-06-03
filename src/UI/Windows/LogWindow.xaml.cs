@@ -431,7 +431,7 @@ public partial class LogWindow : Window
             // 테스트용 데이터 생성
             var testContext = new
             {
-                Text = "<span style='font-family: 맑은 고딕; font-size: 12pt; color: #0000FF; background-color: #FFFF00'><b>테스트 텍스트입니다.</b></span>",
+                Text = System.Windows.Clipboard.GetText(),
                 Position = "1-1" // Word의 경우 "1-1", Excel의 경우 "R1C1-R1C1"
             };
 
@@ -439,7 +439,7 @@ public partial class LogWindow : Window
             var testProgram = new
             {
                 FileType = "Word", // 또는 "Excel"
-                FilePath = @"C:\Users\beste\OneDrive\Desktop\testFolder\single_test.docx" // 실제 테스트할 파일 경로
+                FilePath = @"C:\Users\beste\OneDrive\Desktop\testData\single_test.docx" // 실제 테스트할 파일 경로
             };
 
             // Writer 생성 및 적용
