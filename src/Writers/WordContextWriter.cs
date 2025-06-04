@@ -190,8 +190,22 @@ namespace overlay_gpt
                 // HTML 태그 처리
                 Console.WriteLine("HTML 파싱 시작...");
                 var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+                htmlDoc.OptionFixNestedTags = true;
+                htmlDoc.OptionAutoCloseOnEnd = true;
+                htmlDoc.OptionDefaultStreamEncoding = System.Text.Encoding.UTF8;
+                htmlDoc.OptionOutputAsXml = true;
+                htmlDoc.OptionOutputOriginalCase = true;
+                htmlDoc.OptionPreserveXmlNamespaces = true;
+                htmlDoc.OptionWriteEmptyNodes = true;
+                
+                // HTML 문자열 전처리
+                text = text.Replace("\x0b", ""); // 수직 탭 제거
+                text = text.Replace("\u200b", ""); // 제로 너비 공백 제거
+                
+                Console.WriteLine($"파싱할 HTML: {text}");
                 htmlDoc.LoadHtml(text);
                 Console.WriteLine($"HTML 노드 수: {htmlDoc.DocumentNode.ChildNodes.Count}");
+                Console.WriteLine($"HTML 내용: {htmlDoc.DocumentNode.InnerHtml}");
 
                 // 텍스트와 스타일 적용
                 int nodeIndex = 0;
@@ -209,7 +223,7 @@ namespace overlay_gpt
                             Console.WriteLine($"텍스트 노드 처리 - 내용: {node.InnerText}");
                             currentNodeRange.Text = node.InnerText;
                         }
-                        else
+                        else if (node.NodeType == HtmlAgilityPack.HtmlNodeType.Element)
                         {
                             Console.WriteLine($"HTML 태그 노드 처리 - 태그: {node.Name}");
                             var style = node.GetAttributeValue("style", "");
