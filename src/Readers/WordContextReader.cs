@@ -233,7 +233,7 @@ namespace overlay_gpt
             return string.Join("; ", styleList);
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             try
             {
@@ -291,14 +291,14 @@ namespace overlay_gpt
                     Console.WriteLine($"- 저장 여부: {(_document.Saved ? "저장됨" : "저장되지 않음")}");
                     Console.WriteLine($"- 읽기 전용: {(_document.ReadOnly ? "예" : "아니오")}");
 
-                    var selection = _wordApp.Selection;
-                    if (selection == null)
+                    var range = readAllContent ? _document.Content : _wordApp.Selection.Range;
+                    if (range == null)
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    string selectedText = selection.Text;
+                    string selectedText = range.Text;
                     var styleAttributes = new Dictionary<string, object>();
                     var styledTextBuilder = new StringBuilder();
 
@@ -308,8 +308,8 @@ namespace overlay_gpt
                     int endLine = totalLines;
 
                     // 선택된 텍스트의 시작과 끝 위치를 기준으로 라인 번호 계산
-                    int selectionStart = selection.Range.Start;
-                    int selectionEnd = selection.Range.End;
+                    int selectionStart = range.Start;
+                    int selectionEnd = range.End;
 
                     for (int i = 1; i <= totalLines; i++)
                     {
@@ -330,7 +330,6 @@ namespace overlay_gpt
                     string lineNumber = $"{startLine}-{endLine}";
 
                     // 선택된 텍스트의 각 부분에 대해 스타일 정보 수집
-                    var range = selection.Range;
                     var start = range.Start;
                     var end = range.End;
 

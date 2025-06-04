@@ -10,7 +10,7 @@ namespace overlay_gpt.Network.Models.Vue
         public string Command { get; set; } = "display_text";
 
         [JsonPropertyName("generated_timestamp")]
-        public string GeneratedTimestamp { get; set; } = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        public string GeneratedTimestamp { get; set; } = string.Empty;
 
         [JsonPropertyName("chat_id")]
         public int ChatId { get; set; } = -1;

@@ -22,6 +22,7 @@ public partial class LogWindow : Window
     private static readonly SemaphoreSlim _logSemaphore = new SemaphoreSlim(1, 1);
     private WithFlaskAsClient? _flaskClient;
     private WithVueAsHost? _vueHost;
+    private readonly NtfsFileFinder _ntfsFileFinder;
 
     public static LogWindow Instance
     {
@@ -52,9 +53,10 @@ public partial class LogWindow : Window
         }
     }
 
-    private LogWindow()
+    public LogWindow()
     {
         InitializeComponent();
+        _ntfsFileFinder = new NtfsFileFinder();
     }
 
     public void SetServers(WithFlaskAsClient flaskClient, WithVueAsHost vueHost)
@@ -593,6 +595,37 @@ public partial class LogWindow : Window
             };
 
             ParameterTextBox.Text = template;
+        }
+    }
+
+    private async void TestNtfsFileFinderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 테스트용 fileId와 volumeId
+            long fileId = 21673573207065453; // 실제 테스트할 파일의 ID
+            uint volumeId = 2524257335; // 실제 테스트할 볼륨의 ID
+            
+            Log("NtfsFileFinder 테스트 시작...");
+            Log($"테스트할 FileId: {fileId}");
+            Log($"테스트할 VolumeId: {volumeId}");
+
+            // fileId와 volumeId로 파일 찾기
+            string foundPath = _ntfsFileFinder.FindFileByFileIdAndVolumeId(fileId, volumeId);
+            
+            if (foundPath != null)
+            {
+                Log($"찾은 파일 경로: {foundPath}");
+                Log("테스트 성공!");
+            }
+            else
+            {
+                Log("파일을 찾을 수 없습니다.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"테스트 중 오류 발생: {ex.Message}");
         }
     }
 

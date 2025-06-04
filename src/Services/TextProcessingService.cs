@@ -16,9 +16,12 @@ namespace overlay_gpt.Services
 
         public DisplayText ProcessSelectedText(string selectedText, ProgramInfoCommon programInfo)
         {
+            var now = DateTime.UtcNow;
+            var timestamp = now.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            
             var chatData = new ChatData
             {
-                GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                GeneratedTimestamp = timestamp,
                 CurrentProgram = programInfo,
                 TargetProgram = null
             };
@@ -29,6 +32,7 @@ namespace overlay_gpt.Services
 
             return new DisplayText
             {
+                GeneratedTimestamp = timestamp,
                 CurrentProgram = programInfo,
                 TargetProgram = null,
                 Texts = new List<TextData> { textData }
