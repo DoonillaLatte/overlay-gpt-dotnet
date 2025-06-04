@@ -236,13 +236,27 @@ namespace overlay_gpt.Network
                     chatData.Title = title;
                 }
                 chatData.Texts.Add(new TextData { Type = textType, Content = message });
-                if(chatData.TargetProgram == null) 
+                if(chatData.TargetProgram == null)
                 {
-                    chatData.CurrentProgram.Context = message;
+                    if (chatData.CurrentProgram != null) // CurrentProgram에 대한 null 체크 추가
+                    {
+                        chatData.CurrentProgram.Context = message;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"chatId {chatId}의 CurrentProgram이 null입니다.");
+                    }
                 }
                 else
                 {
-                    chatData.TargetProgram.Context = message;
+                    if (chatData.TargetProgram != null) // TargetProgram에 대한 null 체크 추가
+                    {
+                        chatData.TargetProgram.Context = message;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"chatId {chatId}의 TargetProgram이 null입니다.");
+                    }
                 }
                 Console.WriteLine($"ChatData {chatId}에 메시지가 추가되었습니다.");
 

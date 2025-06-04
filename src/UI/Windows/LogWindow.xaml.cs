@@ -540,6 +540,70 @@ public partial class LogWindow : Window
         }
     }
 
+    private async void ApplyPPTContextButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string contextText = PPTContextTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(contextText))
+            {
+                Log("PPT 컨텍스트를 입력해주세요.");
+                return;
+            }
+
+            // 테스트용 데이터 생성
+            var testContext = new
+            {
+                Text = contextText,
+                Position = "Slide 1"
+            };
+
+            // 테스트용 프로그램 정보 생성
+            var testProgram = new
+            {
+                FileType = "PowerPoint",
+                FilePath = @"C:\Users\beste\OneDrive\Desktop\testData\single_test.pptx" // 실제 테스트할 파일 경로
+            };
+
+            // Writer 생성 및 적용
+            var writer = ContextWriterFactory.CreateWriter(testProgram.FileType);
+            if (writer == null)
+            {
+                Log("지원하지 않는 프로그램입니다.");
+                return;
+            }
+
+            // 파일 열기
+            Log("파일 열기 시도...");
+            if (!writer.OpenFile(testProgram.FilePath))
+            {
+                Log("파일을 열 수 없습니다.");
+                return;
+            }
+            Log("파일 열기 성공");
+
+            // 컨텍스트 적용
+            Log("컨텍스트 적용 시도...");
+            bool success = writer.ApplyTextWithStyle(
+                testContext.Text,
+                testContext.Position
+            );
+
+            if (success)
+            {
+                Log("컨텍스트 적용 성공");
+            }
+            else
+            {
+                Log("컨텍스트 적용 실패");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"오류 발생: {ex.Message}");
+        }
+    }
+
     private void ParameterTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ParameterTypeComboBox.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content != null && ParameterTextBox != null)

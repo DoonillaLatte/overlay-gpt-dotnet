@@ -13,6 +13,8 @@ namespace overlay_gpt
                     return new WordContextWriter();
                 case "Excel":
                     return new ExcelContextWriter();
+                case "PowerPoint":
+                    return new PPTContextWriter();
                 default:
                     throw new NotSupportedException($"지원하지 않는 프로그램입니다: {fileType}");
             }
