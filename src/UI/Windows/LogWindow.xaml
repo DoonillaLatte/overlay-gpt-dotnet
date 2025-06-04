@@ -120,9 +120,15 @@
                         Click="ApplyExcelContextButton_Click" 
                         Margin="5,10,0,0"/>
 
-                <Button x:Name="TestNtfsFileFinderButton" 
+                <Button x:Name="ApplyPPTContextButton" 
                         Grid.Row="3" Grid.Column="0"
-                        Content="NtfsFileFinder 테스트" 
+                        Content="PowerPoint 컨텍스트 적용 테스트" 
+                        Click="ApplyPPTContextButton_Click" 
+                        Margin="5,10,0,0"/>
+
+                <Button x:Name="TestNtfsFileFinderButton" 
+                        Grid.Row="3" Grid.Column="1"
+                        Content="NTFS 파일 찾기 테스트" 
                         Click="TestNtfsFileFinderButton_Click" 
                         Margin="5,10,0,0"/>
             </Grid>

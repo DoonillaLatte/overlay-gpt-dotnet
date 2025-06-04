@@ -540,6 +540,63 @@ public partial class LogWindow : Window
         }
     }
 
+    private async void ApplyPPTContextButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 테스트용 데이터 생성
+            var testContext = new
+            {
+                Text = @"<div style='position: absolute; left: 120px; top: 88.37504px; width: 720px; height: 188px; opacity: 0.99; border-radius: 18.8px; z-index: 1'><div style='font-size: 60pt; color: #FF0000; text-align: center; vertical-align: bottom; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: flex-end'><span style='font-size: 60pt'>안녕</span></div></div><div style='position: absolute; left: 120px; top: 283.62503px; width: 720px; height: 130.37495px; opacity: 0.99; border-radius: 13.037495422363282px; z-index: 2'><div style='font-size: 24pt; text-align: center; vertical-align: top; display: flex; align-items: center; justify-content: flex-start; justify-content: center'><span style='font-size: 24pt'>하세요</span></div></div><div style='position: absolute; left: 41.04669px; top: 45.757008px; width: 872.74774px; height: 47.77567px; background-color: #156082; border: 1.5px solid #042433; z-index: 3'><div style='font-size: 18pt; color: #FFFFFF; text-align: center; vertical-align: middle; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: center'><span style='font-size: 18pt'></span></div></div><div style='position: absolute; left: 41.04669px; top: 453.86914px; width: 872.74774px; height: 47.77567px; background-color: #156082; border: 1.5px solid #042433; z-index: 4'><div style='font-size: 18pt; color: #FFFFFF; text-align: center; vertical-align: middle; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: center'><span style='font-size: 18pt'></span></div></div>",
+                Position = "Slide 1"
+            };
+
+            // 테스트용 프로그램 정보 생성
+            var testProgram = new
+            {
+                FileType = "PowerPoint",
+                FilePath = @"C:\Users\beste\OneDrive\Desktop\testData\single_test.pptx" // 실제 테스트할 파일 경로
+            };
+
+            // Writer 생성 및 적용
+            var writer = ContextWriterFactory.CreateWriter(testProgram.FileType);
+            if (writer == null)
+            {
+                Log("지원하지 않는 프로그램입니다.");
+                return;
+            }
+
+            // 파일 열기
+            Log("파일 열기 시도...");
+            if (!writer.OpenFile(testProgram.FilePath))
+            {
+                Log("파일을 열 수 없습니다.");
+                return;
+            }
+            Log("파일 열기 성공");
+
+            // 컨텍스트 적용
+            Log("컨텍스트 적용 시도...");
+            bool success = writer.ApplyTextWithStyle(
+                testContext.Text,
+                testContext.Position
+            );
+
+            if (success)
+            {
+                Log("컨텍스트 적용 성공");
+            }
+            else
+            {
+                Log("컨텍스트 적용 실패");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"오류 발생: {ex.Message}");
+        }
+    }
+
     private void ParameterTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ParameterTypeComboBox.SelectedItem is ComboBoxItem selectedItem && selectedItem.Content != null && ParameterTextBox != null)

@@ -196,39 +196,52 @@ namespace overlay_gpt
                 }
             }
 
+            // 텍스트 정렬 설정
+            string textAlign = "left";
             if (styleAttributes.ContainsKey("TextAlign"))
             {
-                string textAlign = styleAttributes["TextAlign"]?.ToString() ?? "left";
-                styleList.Add($"text-align: {textAlign}");
+                textAlign = styleAttributes["TextAlign"]?.ToString() ?? "left";
             }
+            styleList.Add($"text-align: {textAlign}");
 
+            // 수직 정렬 설정
+            string verticalAlign = "top";
             if (styleAttributes.ContainsKey("VerticalAlign"))
             {
-                string verticalAlign = styleAttributes["VerticalAlign"]?.ToString() ?? "top";
-                styleList.Add($"vertical-align: {verticalAlign}");
+                verticalAlign = styleAttributes["VerticalAlign"]?.ToString() ?? "top";
             }
+            styleList.Add($"vertical-align: {verticalAlign}");
 
-            // 텍스트 정렬을 위한 추가 스타일
+            // Flexbox 속성 설정
             styleList.Add("display: flex");
             styleList.Add("align-items: center");
-            styleList.Add("justify-content: flex-start");
+            
+            // 수평 정렬에 따른 justify-content 설정
+            switch (textAlign)
+            {
+                case "center":
+                    styleList.Add("justify-content: center");
+                    break;
+                case "right":
+                    styleList.Add("justify-content: flex-end");
+                    break;
+                default:
+                    styleList.Add("justify-content: flex-start");
+                    break;
+            }
 
-            if (styleAttributes["TextAlign"]?.ToString() == "center")
+            // 수직 정렬에 따른 align-items 설정
+            switch (verticalAlign)
             {
-                styleList.Add("justify-content: center");
-            }
-            else if (styleAttributes["TextAlign"]?.ToString() == "right")
-            {
-                styleList.Add("justify-content: flex-end");
-            }
-
-            if (styleAttributes["VerticalAlign"]?.ToString() == "middle")
-            {
-                styleList.Add("align-items: center");
-            }
-            else if (styleAttributes["VerticalAlign"]?.ToString() == "bottom")
-            {
-                styleList.Add("align-items: flex-end");
+                case "middle":
+                    styleList.Add("align-items: center");
+                    break;
+                case "bottom":
+                    styleList.Add("align-items: flex-end");
+                    break;
+                default:
+                    styleList.Add("align-items: flex-start");
+                    break;
             }
 
             return string.Join("; ", styleList);
@@ -406,8 +419,7 @@ namespace overlay_gpt
                 }
                 
                 string textStyle = GetTextStyleString(styleAttributes);
-                string styledText = GetStyledText(textRange.Text, styleAttributes);
-                content = $"<div style='{textStyle}'>{styledText}</div>";
+                content = $"<div style='{textStyle}'>{textRange.Text}</div>";
             }
             else if (shape.Type == MsoShapeType.msoPicture)
             {
