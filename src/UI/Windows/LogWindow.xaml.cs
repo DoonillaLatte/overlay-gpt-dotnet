@@ -544,10 +544,17 @@ public partial class LogWindow : Window
     {
         try
         {
+            string contextText = PPTContextTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(contextText))
+            {
+                Log("PPT 컨텍스트를 입력해주세요.");
+                return;
+            }
+
             // 테스트용 데이터 생성
             var testContext = new
             {
-                Text = @"<div style='position: absolute; left: 120px; top: 88.37504px; width: 720px; height: 188px; opacity: 0.99; border-radius: 18.8px; z-index: 1'><div style='font-size: 60pt; color: #FF0000; text-align: center; vertical-align: bottom; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: flex-end'><span style='font-size: 60pt'>안녕</span></div></div><div style='position: absolute; left: 120px; top: 283.62503px; width: 720px; height: 130.37495px; opacity: 0.99; border-radius: 13.037495422363282px; z-index: 2'><div style='font-size: 24pt; text-align: center; vertical-align: top; display: flex; align-items: center; justify-content: flex-start; justify-content: center'><span style='font-size: 24pt'>하세요</span></div></div><div style='position: absolute; left: 41.04669px; top: 45.757008px; width: 872.74774px; height: 47.77567px; background-color: #156082; border: 1.5px solid #042433; z-index: 3'><div style='font-size: 18pt; color: #FFFFFF; text-align: center; vertical-align: middle; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: center'><span style='font-size: 18pt'></span></div></div><div style='position: absolute; left: 41.04669px; top: 453.86914px; width: 872.74774px; height: 47.77567px; background-color: #156082; border: 1.5px solid #042433; z-index: 4'><div style='font-size: 18pt; color: #FFFFFF; text-align: center; vertical-align: middle; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: center'><span style='font-size: 18pt'></span></div></div>",
+                Text = contextText,
                 Position = "Slide 1"
             };
 

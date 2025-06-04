@@ -29,12 +29,12 @@ namespace overlay_gpt
             return obj;
         }
 
-        private int ConvertColorToRGB(int bgrColor)
+        private int ConvertColorToRGB(int rgbColor)
         {
-            int r = bgrColor & 0xFF;
-            int g = (bgrColor >> 8) & 0xFF;
-            int b = (bgrColor >> 16) & 0xFF;
-            return (r << 16) | (g << 8) | b;
+            int r = (rgbColor >> 16) & 0xFF;
+            int g = (rgbColor >> 8) & 0xFF;
+            int b = rgbColor & 0xFF;
+            return (b << 16) | (g << 8) | r;
         }
 
         public bool OpenFile(string filePath)
@@ -161,10 +161,20 @@ namespace overlay_gpt
                             var style = node.GetAttributeValue("style", "");
                             Console.WriteLine($"스타일 속성: {style}");
                             
-                            var styleAttributes = style.Split(';')
-                                .Select(s => s.Trim().Split(':'))
-                                .Where(p => p.Length == 2)
-                                .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+                            var styleAttributes = new Dictionary<string, string>();
+                            foreach (var stylePart in style.Split(';'))
+                            {
+                                var parts = stylePart.Trim().Split(':');
+                                if (parts.Length == 2)
+                                {
+                                    var key = parts[0].Trim();
+                                    var value = parts[1].Trim();
+                                    if (!styleAttributes.ContainsKey(key))
+                                    {
+                                        styleAttributes[key] = value;
+                                    }
+                                }
+                            }
 
                             // 위치와 크기 설정
                             if (styleAttributes.TryGetValue("left", out var left))
@@ -177,17 +187,40 @@ namespace overlay_gpt
                                 shape.Height = float.Parse(height.Replace("px", ""));
 
                             // 텍스트 설정
-                            if (node.InnerText != null)
+                            var innerDiv = node.SelectSingleNode(".//div");
+                            if (innerDiv != null)
                             {
-                                shape.TextFrame.TextRange.Text = node.InnerText;
+                                var innerStyle = innerDiv.GetAttributeValue("style", "");
+                                var innerStyleAttributes = new Dictionary<string, string>();
+                                foreach (var stylePart in innerStyle.Split(';'))
+                                {
+                                    var parts = stylePart.Trim().Split(':');
+                                    if (parts.Length == 2)
+                                    {
+                                        var key = parts[0].Trim();
+                                        var value = parts[1].Trim();
+                                        if (!innerStyleAttributes.ContainsKey(key))
+                                        {
+                                            innerStyleAttributes[key] = value;
+                                        }
+                                    }
+                                }
+
+                                shape.TextFrame.TextRange.Text = innerDiv.InnerText;
                                 var textRange = shape.TextFrame.TextRange;
 
                                 // 텍스트 스타일 설정
-                                if (styleAttributes.TryGetValue("font-family", out var fontFamily))
+                                if (innerStyleAttributes.TryGetValue("font-family", out var fontFamily))
                                     textRange.Font.Name = fontFamily.Trim('\'');
-                                if (styleAttributes.TryGetValue("font-size", out var fontSize))
-                                    textRange.Font.Size = float.Parse(fontSize.Replace("pt", ""));
-                                if (styleAttributes.TryGetValue("color", out var color))
+                                if (innerStyleAttributes.TryGetValue("font-size", out var fontSize))
+                                {
+                                    var size = fontSize.Replace("pt", "").Trim();
+                                    if (float.TryParse(size, out float sizeValue))
+                                    {
+                                        textRange.Font.Size = sizeValue;
+                                    }
+                                }
+                                if (innerStyleAttributes.TryGetValue("color", out var color))
                                 {
                                     if (color.StartsWith("#"))
                                     {
@@ -195,9 +228,14 @@ namespace overlay_gpt
                                         textRange.Font.Color.RGB = ConvertColorToRGB(rgb);
                                     }
                                 }
+                                else
+                                {
+                                    // 기본 색상을 검은색으로 설정
+                                    textRange.Font.Color.RGB = 0;
+                                }
 
                                 // 텍스트 정렬
-                                if (styleAttributes.TryGetValue("text-align", out var textAlign))
+                                if (innerStyleAttributes.TryGetValue("text-align", out var textAlign))
                                 {
                                     switch (textAlign)
                                     {
@@ -216,32 +254,57 @@ namespace overlay_gpt
                                     }
                                 }
 
-                                // 배경색 설정
-                                if (styleAttributes.TryGetValue("background-color", out var bgColor))
+                                // 수직 정렬
+                                if (innerStyleAttributes.TryGetValue("vertical-align", out var verticalAlign))
                                 {
-                                    if (bgColor.StartsWith("#"))
+                                    switch (verticalAlign)
                                     {
-                                        var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                        shape.Fill.ForeColor.RGB = ConvertColorToRGB(rgb);
+                                        case "middle":
+                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorMiddle;
+                                            break;
+                                        case "bottom":
+                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorBottom;
+                                            break;
+                                        default:
+                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorTop;
+                                            break;
                                     }
                                 }
+                            }
 
-                                // 투명도 설정
-                                if (styleAttributes.TryGetValue("opacity", out var opacity))
+                            // 배경색 설정
+                            if (styleAttributes.TryGetValue("background-color", out var bgColor))
+                            {
+                                if (bgColor.StartsWith("#"))
                                 {
-                                    shape.Fill.Transparency = (1 - float.Parse(opacity)) * 100;
+                                    var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
+                                    shape.Fill.ForeColor.RGB = ConvertColorToRGB(rgb);
                                 }
+                            }
 
-                                // 테두리 설정
-                                if (styleAttributes.TryGetValue("border", out var border))
+                            // 투명도 설정
+                            if (styleAttributes.TryGetValue("opacity", out var opacity))
+                            {
+                                shape.Fill.Transparency = (1 - float.Parse(opacity)) * 100;
+                            }
+
+                            // 테두리 설정
+                            if (styleAttributes.TryGetValue("border", out var border))
+                            {
+                                var borderParts = border.Split(' ');
+                                if (borderParts.Length >= 3)
                                 {
-                                    var borderParts = border.Split(' ');
-                                    if (borderParts.Length >= 3)
-                                    {
-                                        shape.Line.Weight = float.Parse(borderParts[0].Replace("px", ""));
-                                        shape.Line.ForeColor.RGB = int.Parse(borderParts[2].Replace("#", ""), System.Globalization.NumberStyles.HexNumber);
-                                    }
+                                    shape.Line.Weight = float.Parse(borderParts[0].Replace("px", ""));
+                                    var borderColor = int.Parse(borderParts[2].Replace("#", ""), System.Globalization.NumberStyles.HexNumber);
+                                    shape.Line.ForeColor.RGB = ConvertColorToRGB(borderColor);
                                 }
+                            }
+
+                            // 모서리 둥글기
+                            if (styleAttributes.TryGetValue("border-radius", out var borderRadius))
+                            {
+                                var radius = float.Parse(borderRadius.Replace("px", ""));
+                                shape.Adjustments[1] = radius / shape.Width * 100;
                             }
                         }
                     }
