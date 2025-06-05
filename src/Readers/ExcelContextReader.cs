@@ -468,28 +468,68 @@ namespace overlay_gpt
 
         public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
+            Application? tempExcelApp = null;
+            Workbook? tempWorkbook = null;
+            
             try
             {
-                if (_workbook == null)
+                Console.WriteLine("Excel COM 객체 가져오기 시도...");
+                tempExcelApp = (Application)GetActiveObject("Excel.Application");
+                Console.WriteLine("Excel COM 객체 가져오기 성공");
+
+                Console.WriteLine("활성 워크북 가져오기 시도...");
+                tempWorkbook = tempExcelApp.ActiveWorkbook;
+                
+                if (tempWorkbook == null)
+                {
+                    Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
                     return (null, null, "Excel", string.Empty, string.Empty);
+                }
 
-                string filePath = _workbook.FullName;
+                string filePath = tempWorkbook.FullName;
+                string fileName = tempWorkbook.Name;
+                
+                Console.WriteLine($"Excel 문서 정보:");
+                Console.WriteLine($"- 파일 경로: {filePath}");
+                Console.WriteLine($"- 파일 이름: {fileName}");
+                
                 if (string.IsNullOrEmpty(filePath))
-                    return (null, null, "Excel", _workbook.Name, string.Empty);
-
+                {
+                    Console.WriteLine("파일 경로가 비어있습니다.");
+                    return (null, null, "Excel", fileName, string.Empty);
+                }
+                
                 var fileIdInfo = GetFileId(filePath);
+                
+                if (fileIdInfo == null)
+                {
+                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                }
+                else
+                {
+                    Console.WriteLine($"파일 ID 정보:");
+                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                }
+                
                 return (
                     fileIdInfo?.FileId,
                     fileIdInfo?.VolumeId,
                     "Excel",
-                    _workbook.Name,
+                    fileName,
                     filePath
                 );
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 return (null, null, "Excel", string.Empty, string.Empty);
+            }
+            finally
+            {
+                if (tempWorkbook != null) Marshal.ReleaseComObject(tempWorkbook);
+                if (tempExcelApp != null) Marshal.ReleaseComObject(tempExcelApp);
             }
         }
     }
