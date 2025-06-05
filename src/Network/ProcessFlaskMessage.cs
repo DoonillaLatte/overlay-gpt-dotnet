@@ -241,6 +241,7 @@ namespace overlay_gpt.Network
                     if (chatData.CurrentProgram != null) // CurrentProgram에 대한 null 체크 추가
                     {
                         chatData.CurrentProgram.Context = message;
+                        chatData.CurrentProgram.GeneratedContext = message;
                     }
                     else
                     {
@@ -252,6 +253,7 @@ namespace overlay_gpt.Network
                     if (chatData.TargetProgram != null) // TargetProgram에 대한 null 체크 추가
                     {
                         chatData.TargetProgram.Context = message;
+                        chatData.TargetProgram.GeneratedContext = message;
                     }
                     else
                     {

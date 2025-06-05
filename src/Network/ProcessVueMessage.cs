@@ -208,7 +208,6 @@ namespace overlay_gpt.Network
 
         private async Task HandleApplyResponse(JObject data)
         {
-            // TODO: 응답 적용 로직 구현
             
             // 해당 ChatID를 통해 데이터 가져오기
             var chatData = ChatDataManager.Instance.GetChatDataById(data["chat_id"]?.Value<int>() ?? 0);
@@ -217,22 +216,30 @@ namespace overlay_gpt.Network
                 throw new Exception("해당 ChatID를 통해 데이터를 가져오지 못했습니다.");
             }
             
+            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 채팅 데이터 정보:");
+            Console.WriteLine($"- ChatID: {chatData.ChatId}");
+            Console.WriteLine($"- 현재 프로그램: {chatData.CurrentProgram?.FileType} - {chatData.CurrentProgram?.FileName}");
+            Console.WriteLine($"- 대상 프로그램: {chatData.TargetProgram?.FileType} - {chatData.TargetProgram?.FileName}");
+            
             ProgramInfo programToChange = null;
             
             // target_program이 null인지 확인
             if (chatData.TargetProgram == null)
             {
                 // null이라면 current_program에 생성된 context를 적용
-                // current_program 가져오기
                 programToChange = chatData.CurrentProgram;
+                Console.WriteLine("대상 프로그램이 null이므로 현재 프로그램에 적용합니다.");
             }
             else 
             {
                 // null이 아니라면 target_program에 생성된 context를 적용
                 programToChange = chatData.TargetProgram;
+                Console.WriteLine("대상 프로그램에 적용합니다.");
             }
 
             string generatedContext = programToChange.GeneratedContext;
+            Console.WriteLine($"적용할 컨텍스트 길이: {generatedContext?.Length ?? 0} 문자");
+            Console.WriteLine($"적용할 위치: {programToChange.Position}");
             
             // 해당 프로그램에 적용
             try
@@ -242,6 +249,7 @@ namespace overlay_gpt.Network
                 {
                     throw new Exception("지원하지 않는 프로그램입니다.");
                 }
+                Console.WriteLine($"Writer 생성 완료: {programToChange.FileType}");
 
                 // 생성된 컨텍스트가 있는지 확인
                 if (generatedContext == null)
@@ -250,12 +258,15 @@ namespace overlay_gpt.Network
                 }
 
                 // 파일 열기 시도
+                Console.WriteLine($"파일 열기 시도: {programToChange.FilePath}");
                 if (!writer.OpenFile(programToChange.FilePath))
                 {
                     throw new Exception("파일을 열 수 없습니다.");
                 }
+                Console.WriteLine("파일 열기 성공");
 
                 // 컨텍스트 적용
+                Console.WriteLine("컨텍스트 적용 시작...");
                 bool success = writer.ApplyTextWithStyle(
                     generatedContext,
                     programToChange.Position
@@ -271,6 +282,12 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 컨텍스트 적용 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"내부 예외: {ex.InnerException.Message}");
+                    Console.WriteLine($"내부 예외 스택 트레이스: {ex.InnerException.StackTrace}");
+                }
                 throw;
             }
 
