@@ -57,3 +57,6 @@ nunit-*.xml
 .cursor
 .vscode
 .vs
+
+# Generated images
+images/
