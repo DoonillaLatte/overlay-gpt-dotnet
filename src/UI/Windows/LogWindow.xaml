@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:overlay_gpt"
-        Title="로그" Height="600" Width="800"
+        Title="로그" Height="800" Width="800"
         WindowStartupLocation="Manual"
         Top="0" Left="0"
         Background="#F5F5F5"
@@ -54,7 +54,6 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -92,7 +91,7 @@
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="파라미터:" Margin="0,10,0,5"/>
                 <TextBox x:Name="ParameterTextBox" 
                          Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                         Height="150"
+                         Height="200"
                          TextWrapping="Wrap"
                          AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto">
@@ -100,56 +99,47 @@
                         <TextBlock Text="Parameter (JSON)"/>
                     </TextBox.ToolTip>
                 </TextBox>
-
-                <!-- 컨텍스트 테스트 영역 -->
-                <GroupBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Header="컨텍스트 테스트" Margin="0,10,0,0">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- PowerPoint 컨텍스트 -->
-                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,5,0">
-                            <TextBlock Text="PowerPoint 컨텍스트:" Margin="0,0,0,5"/>
-                            <TextBox x:Name="PPTContextTextBox"
-                                    Height="80"
-                                    TextWrapping="Wrap"
-                                    AcceptsReturn="True"
-                                    VerticalScrollBarVisibility="Auto"
-                                    Text="&lt;div style='position: absolute; left: 120px; top: 88.37504px; width: 720px; height: 188px; opacity: 0.99; border-radius: 18.8px; z-index: 1'&gt;&lt;div style='font-size: 60pt; color: #FF0000; text-align: center; vertical-align: bottom; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: flex-end'&gt;&lt;span style='font-size: 60pt'&gt;안녕&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;"/>
-                        </StackPanel>
-
-                        <!-- 테스트 버튼들 -->
-                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-                            <Button x:Name="ApplyPPTContextButton" Content="PowerPoint 테스트" Click="ApplyPPTContextButton_Click"/>
-                            <Button x:Name="ApplyContextButton" Content="Word 테스트" Click="ApplyContextButton_Click"/>
-                            <Button x:Name="ApplyExcelContextButton" Content="Excel 테스트" Click="ApplyExcelContextButton_Click"/>
-                            <Button x:Name="TestNtfsFileFinderButton" Content="NTFS 파일 찾기" Click="TestNtfsFileFinderButton_Click"/>
-                        </StackPanel>
-                    </Grid>
-                </GroupBox>
             </Grid>
         </GroupBox>
         
         <!-- 로그 영역 -->
         <GroupBox Grid.Row="1" Header="로그">
-            <RichTextBox x:Name="LogRichTextBox" 
-                        Margin="5" 
-                        IsReadOnly="True"
-                        VerticalScrollBarVisibility="Auto"
-                        HorizontalScrollBarVisibility="Auto">
-                <RichTextBox.Resources>
-                    <Style TargetType="{x:Type Paragraph}">
-                        <Setter Property="Margin" Value="0"/>
-                    </Style>
-                </RichTextBox.Resources>
-            </RichTextBox>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <RichTextBox x:Name="LogRichTextBox" 
+                            Grid.Row="0"
+                            Margin="5" 
+                            IsReadOnly="True"
+                            VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Auto">
+                    <RichTextBox.Resources>
+                        <Style TargetType="{x:Type Paragraph}">
+                            <Setter Property="Margin" Value="0"/>
+                        </Style>
+                    </RichTextBox.Resources>
+                </RichTextBox>
+
+                <StackPanel Grid.Row="1" Margin="10">
+                    <TextBlock Text="파일 경로:" Margin="0,5"/>
+                    <TextBox x:Name="FilePathTextBox" Margin="0,5"/>
+                    
+                    <TextBlock Text="선택 범위:" Margin="0,5"/>
+                    <TextBox x:Name="PositionTextBox" Margin="0,5" IsReadOnly="True"/>
+                    
+                    <TextBlock Text="컨텍스트 내용:" Margin="0,5"/>
+                    <TextBox x:Name="ContextTextBox" Height="100" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,5"/>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,10">
+                        <Button x:Name="ApplyWordContextButton" Content="Word 적용" Click="ApplyContextButton_Click" Margin="0,0,5,0"/>
+                        <Button x:Name="ApplyExcelContextButton" Content="Excel 적용" Click="ApplyExcelContextButton_Click" Margin="0,0,5,0"/>
+                        <Button x:Name="ApplyPPTContextButton" Content="PPT 적용" Click="ApplyPPTContextButton_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
         </GroupBox>
     </Grid>
 </Window> 

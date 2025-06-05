@@ -142,7 +142,7 @@ namespace overlay_gpt
             return null;
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool includeStyle = true)
         {
             try
             {
@@ -200,12 +200,30 @@ namespace overlay_gpt
                     Console.WriteLine($"- 저장 여부: {(_document.Saved ? "저장됨" : "저장되지 않음")}");
                     Console.WriteLine($"- 읽기 전용: {(_document.ReadOnly ? "예" : "아니오")}");
 
+                    // 로그 윈도우의 파일 경로와 컨텍스트 텍스트박스 업데이트
+                    LogWindow.Instance.Dispatcher.Invoke(() =>
+                    {
+                        LogWindow.Instance.FilePathTextBox.Text = _document.FullName;
+                    });
+
                     var selection = _wordApp.Selection;
                     if (selection == null)
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
+
+                    // 선택된 텍스트의 위치 정보 가져오기
+                    string position = $"시작: {selection.Start}, 끝: {selection.End}";
+                    Console.WriteLine($"선택된 텍스트 위치: {position}");
+
+                    // 로그 윈도우의 컨텍스트 텍스트박스 업데이트
+                    LogWindow.Instance.Dispatcher.Invoke(() =>
+                    {
+                        LogWindow.Instance.FilePathTextBox.Text = _document.FullName;
+                        LogWindow.Instance.PositionTextBox.Text = position;
+                        LogWindow.Instance.ContextTextBox.Text = selection.Text;
+                    });
 
                     // HTML 형식으로 클립보드 복사 시도
                     try
@@ -257,7 +275,13 @@ namespace overlay_gpt
                                     Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
                                 }
 
-                                return (cleanedHtml, new Dictionary<string, object>(), string.Empty);
+                                // 로그 윈도우의 컨텍스트 텍스트박스 업데이트
+                                LogWindow.Instance.Dispatcher.Invoke(() =>
+                                {
+                                    LogWindow.Instance.ContextTextBox.Text = cleanedHtml;
+                                });
+
+                                return (cleanedHtml, new Dictionary<string, object>(), position);
                             }
                         }
                     }
@@ -414,7 +438,7 @@ namespace overlay_gpt
                         .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                         .Select(decl => decl.Trim())
                         // mso-로 시작하는 모든 선언 제거
-                        .Where(decl => !decl.StartsWith("mso-", StringComparison.OrdinalIgnoreCase))
+                        // .Where(decl => !decl.StartsWith("mso-", StringComparison.OrdinalIgnoreCase))
                         .ToList();
 
                     if (declarations.Any())
