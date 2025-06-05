@@ -51,7 +51,13 @@ namespace overlay_gpt.Services
         
         public ChatData? GetChatDataByTimeStamp(string timeStamp)
         {
-            return _chatDataList.Find(x => x.GeneratedTimestamp == timeStamp);
+            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] GetChatDataByTimeStamp 호출 - 찾는 타임스탬프: \"{timeStamp}\"");
+            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 현재 저장된 ChatData 목록:");
+            foreach (var data in _chatDataList)
+            {
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] - ChatId: {data.ChatId}, Timestamp: \"{data.GeneratedTimestamp}\"");
+            }
+            return _chatDataList.Find(x => x.GeneratedTimestamp.Equals(timeStamp, StringComparison.Ordinal));
         }
 
         public void RemoveChatData(int chatId)

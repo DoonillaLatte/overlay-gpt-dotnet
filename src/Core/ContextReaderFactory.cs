@@ -5,11 +5,17 @@ using Word = Microsoft.Office.Interop.Word;
 using Microsoft.VisualBasic;
 using System.Diagnostics;
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace overlay_gpt
 {
     public static class ContextReaderFactory
     {
+        private static readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddConsole();
+        });
+
         public static IContextReader CreateReader(AutomationElement element)
         {
             if (element == null)
@@ -18,6 +24,25 @@ namespace overlay_gpt
                 return new TextPatternContextReader();
             }
                 
+            // 한글 리더 추가
+            try
+            {   
+                Console.WriteLine("HwpContextReader 생성 시도");
+                var logger = _loggerFactory.CreateLogger<HwpContextReader>();
+                var hwpReader = new HwpContextReader(logger);
+                var (text, _, _) = hwpReader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine("HwpContextReader 생성 성공");
+                    return hwpReader;
+                }
+                throw new InvalidOperationException("No text selected in Hwp");
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"한글 관련 오류 발생: {e.Message}");
+            }
+
             // Word 리더 추가
             try
             {   
@@ -52,6 +77,24 @@ namespace overlay_gpt
             catch(Exception e)
             {
                 Console.WriteLine($"Excel 관련 오류 발생: {e.Message}");
+            }
+
+            // PowerPoint 리더 추가
+            try
+            {   
+                Console.WriteLine("PPTContextReader 생성 시도");
+                var pptReader = new PPTContextReader();
+                var (text, _, _) = pptReader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine("PPTContextReader 생성 성공");
+                    return pptReader;
+                }
+                throw new InvalidOperationException("No text selected in PowerPoint");
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"PowerPoint 관련 오류 발생: {e.Message}");
             }
                 
             // TextBox나 ValueBox일 때 포커스 여부 확인

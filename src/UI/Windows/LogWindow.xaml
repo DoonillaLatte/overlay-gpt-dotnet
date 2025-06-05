@@ -21,16 +21,23 @@
             <Setter Property="Background" Value="#007ACC"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="MinWidth" Value="100"/>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Margin" Value="5"/>
             <Setter Property="Padding" Value="5"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="MinWidth" Value="120"/>
         </Style>
         <Style TargetType="TextBlock">
             <Setter Property="Margin" Value="5,5,0,0"/>
             <Setter Property="FontWeight" Value="Medium"/>
+        </Style>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
         </Style>
     </Window.Resources>
     
@@ -40,116 +47,109 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         
-        <Border Grid.Row="0" 
-                Background="White" 
-                BorderBrush="#CCCCCC" 
-                BorderThickness="1" 
-                CornerRadius="5" 
-                Padding="10" 
-                Margin="0,0,0,10">
+        <!-- 상단 컨트롤 영역 -->
+        <GroupBox Grid.Row="0" Header="메시지 전송" Margin="0,0,0,10">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="서버" Margin="0,0,0,5"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="타입" Margin="0,0,0,5"/>
-                
-                <ComboBox x:Name="ServerComboBox" 
-                          Grid.Row="1" Grid.Column="0" 
-                          Margin="0,0,10,0">
-                    <ComboBoxItem Content="Flask" IsSelected="True"/>
-                    <ComboBoxItem Content="Vue"/>
-                </ComboBox>
 
-                <ComboBox x:Name="ParameterTypeComboBox"
-                         Grid.Row="1" Grid.Column="1"
-                         Margin="0,0,10,0"
-                         SelectionChanged="ParameterTypeComboBox_SelectionChanged">
-                    <ComboBoxItem Content="DisplayTextMessage" IsSelected="True"/>
-                    <ComboBoxItem Content="ProgramInfo"/>
-                    <ComboBoxItem Content="Custom JSON"/>
-                </ComboBox>
-                
-                <Button x:Name="SendTestMessageButton" 
-                        Grid.Row="1" Grid.Column="2" 
-                        Content="전송" 
-                        Margin="0,0,0,0"
-                        Click="SendTestMessageButton_Click"/>
+                <!-- 서버 선택 영역 -->
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,10,0">
+                    <TextBlock Text="서버:" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="ServerComboBox" Margin="5,0,0,0">
+                        <ComboBoxItem Content="Flask" IsSelected="True"/>
+                        <ComboBoxItem Content="Vue"/>
+                    </ComboBox>
+                </StackPanel>
 
-                <Button x:Name="ShowAllChatsButton"
-                        Grid.Row="1" Grid.Column="3"
-                        Content="채팅 목록"
-                        Margin="5,0,0,0"
-                        Click="ShowAllChatsButton_Click"/>
+                <!-- 메시지 타입 선택 영역 -->
+                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="타입:" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="ParameterTypeComboBox" Margin="5,0,0,0"
+                             SelectionChanged="ParameterTypeComboBox_SelectionChanged">
+                        <ComboBoxItem Content="DisplayTextMessage" IsSelected="True"/>
+                        <ComboBoxItem Content="ProgramInfo"/>
+                        <ComboBoxItem Content="Custom JSON"/>
+                    </ComboBox>
+                </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" 
-                          Text="파라미터" 
-                          Margin="0,10,0,5"/>
-                
+                <!-- 버튼 영역 -->
+                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal">
+                    <Button x:Name="SendTestMessageButton" Content="전송" Click="SendTestMessageButton_Click"/>
+                    <Button x:Name="ShowAllChatsButton" Content="채팅 목록" Click="ShowAllChatsButton_Click"/>
+                </StackPanel>
+
+                <!-- 파라미터 입력 영역 -->
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="파라미터:" Margin="0,10,0,5"/>
                 <TextBox x:Name="ParameterTextBox" 
-                         Grid.Row="2" Grid.Column="0" 
-                         Grid.ColumnSpan="4"
-                         Height="200"
+                         Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                         Height="150"
                          TextWrapping="Wrap"
                          AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         Margin="0,5">
+                         VerticalScrollBarVisibility="Auto">
                     <TextBox.ToolTip>
                         <TextBlock Text="Parameter (JSON)"/>
                     </TextBox.ToolTip>
                 </TextBox>
 
-                <Button x:Name="ApplyContextButton" 
-                        Grid.Row="3" Grid.Column="2"
-                        Content="Word 컨텍스트 적용 테스트" 
-                        Click="ApplyContextButton_Click" 
-                        Margin="5,10,0,0"/>
+                <!-- 컨텍스트 테스트 영역 -->
+                <GroupBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Header="컨텍스트 테스트" Margin="0,10,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-                <Button x:Name="ApplyExcelContextButton" 
-                        Grid.Row="3" Grid.Column="3"
-                        Content="Excel 컨텍스트 적용 테스트" 
-                        Click="ApplyExcelContextButton_Click" 
-                        Margin="5,10,0,0"/>
+                        <!-- PowerPoint 컨텍스트 -->
+                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,5,0">
+                            <TextBlock Text="PowerPoint 컨텍스트:" Margin="0,0,0,5"/>
+                            <TextBox x:Name="PPTContextTextBox"
+                                    Height="80"
+                                    TextWrapping="Wrap"
+                                    AcceptsReturn="True"
+                                    VerticalScrollBarVisibility="Auto"
+                                    Text="&lt;div style='position: absolute; left: 120px; top: 88.37504px; width: 720px; height: 188px; opacity: 0.99; border-radius: 18.8px; z-index: 1'&gt;&lt;div style='font-size: 60pt; color: #FF0000; text-align: center; vertical-align: bottom; display: flex; align-items: center; justify-content: flex-start; justify-content: center; align-items: flex-end'&gt;&lt;span style='font-size: 60pt'&gt;안녕&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;"/>
+                        </StackPanel>
+
+                        <!-- 테스트 버튼들 -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                            <Button x:Name="ApplyPPTContextButton" Content="PowerPoint 테스트" Click="ApplyPPTContextButton_Click"/>
+                            <Button x:Name="ApplyContextButton" Content="Word 테스트" Click="ApplyContextButton_Click"/>
+                            <Button x:Name="ApplyExcelContextButton" Content="Excel 테스트" Click="ApplyExcelContextButton_Click"/>
+                            <Button x:Name="TestNtfsFileFinderButton" Content="NTFS 파일 찾기" Click="TestNtfsFileFinderButton_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
             </Grid>
-        </Border>
+        </GroupBox>
         
-        <Border Grid.Row="1" 
-                Background="White" 
-                BorderBrush="#CCCCCC" 
-                BorderThickness="1" 
-                CornerRadius="5">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                
-                <TextBlock Grid.Row="0" 
-                          Text="로그" 
-                          Margin="10,5"/>
-                
-                <RichTextBox x:Name="LogRichTextBox" 
-                            Grid.Row="1"
-                            Margin="5" 
-                            IsReadOnly="True"
-                            VerticalScrollBarVisibility="Auto"
-                            HorizontalScrollBarVisibility="Auto">
-                    <RichTextBox.Resources>
-                        <Style TargetType="{x:Type Paragraph}">
-                            <Setter Property="Margin" Value="0"/>
-                        </Style>
-                    </RichTextBox.Resources>
-                </RichTextBox>
-            </Grid>
-        </Border>
+        <!-- 로그 영역 -->
+        <GroupBox Grid.Row="1" Header="로그">
+            <RichTextBox x:Name="LogRichTextBox" 
+                        Margin="5" 
+                        IsReadOnly="True"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Auto">
+                <RichTextBox.Resources>
+                    <Style TargetType="{x:Type Paragraph}">
+                        <Setter Property="Margin" Value="0"/>
+                    </Style>
+                </RichTextBox.Resources>
+            </RichTextBox>
+        </GroupBox>
     </Grid>
 </Window> 

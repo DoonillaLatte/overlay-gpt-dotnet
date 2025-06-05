@@ -7,7 +7,7 @@ namespace overlay_gpt
 {
     public class TextPatternContextReader : BaseContextReader
     {
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             var styleAttributes = new Dictionary<string, object>();
             AutomationElement element = AutomationElement.FocusedElement;

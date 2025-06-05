@@ -288,7 +288,7 @@ namespace overlay_gpt
             return string.Join("; ", styleList);
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             try
             {
@@ -353,8 +353,8 @@ namespace overlay_gpt
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    var selection = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
-                    if (selection == null)
+                    var range = readAllContent ? _worksheet.UsedRange : _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                    if (range == null)
                     {
                         Console.WriteLine("선택된 셀이 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
@@ -365,7 +365,7 @@ namespace overlay_gpt
                     tableHtml.Append("<table style='border-collapse: collapse;'>");
                     
                     int currentRow = -1;
-                    foreach (Microsoft.Office.Interop.Excel.Range cell in selection)
+                    foreach (Microsoft.Office.Interop.Excel.Range cell in range)
                     {
                         if (cell.Row != currentRow)
                         {
@@ -417,12 +417,12 @@ namespace overlay_gpt
                     // 스타일 정보 수집
                     try
                     {
-                        styleAttributes["FontName"] = selection.Font?.Name ?? "Calibri";
-                        styleAttributes["FontSize"] = selection.Font?.Size ?? 11;
-                        styleAttributes["FontWeight"] = (selection.Font?.Bold ?? false) ? "Bold" : "Normal";
-                        styleAttributes["FontItalic"] = selection.Font?.Italic ?? false;
-                        styleAttributes["ForegroundColor"] = selection.Font?.Color ?? 0;
-                        styleAttributes["BackgroundColor"] = selection.Interior?.Color ?? 16777215;
+                        styleAttributes["FontName"] = range.Font?.Name ?? "Calibri";
+                        styleAttributes["FontSize"] = range.Font?.Size ?? 11;
+                        styleAttributes["FontWeight"] = (range.Font?.Bold ?? false) ? "Bold" : "Normal";
+                        styleAttributes["FontItalic"] = range.Font?.Italic ?? false;
+                        styleAttributes["ForegroundColor"] = range.Font?.Color ?? 0;
+                        styleAttributes["BackgroundColor"] = range.Interior?.Color ?? 16777215;
                     }
                     catch (Exception ex)
                     {
@@ -437,10 +437,10 @@ namespace overlay_gpt
                     }
 
                     // 선택된 범위의 시작 행/열과 끝 행/열 구하기
-                    int startRow = selection.Row;
-                    int endRow = selection.Row + selection.Rows.Count - 1;
-                    int startCol = selection.Column;
-                    int endCol = selection.Column + selection.Columns.Count - 1;
+                    int startRow = range.Row;
+                    int endRow = range.Row + range.Rows.Count - 1;
+                    int startCol = range.Column;
+                    int endCol = range.Column + range.Columns.Count - 1;
                     string lineNumber = $"R{startRow}C{startCol}-R{endRow}C{endCol}";
 
                     return (selectedText, styleAttributes, lineNumber);

@@ -236,13 +236,27 @@ namespace overlay_gpt.Network
                     chatData.Title = title;
                 }
                 chatData.Texts.Add(new TextData { Type = textType, Content = message });
-                if(chatData.TargetProgram == null) 
+                if(chatData.TargetProgram == null)
                 {
-                    chatData.CurrentProgram.Context = message;
+                    if (chatData.CurrentProgram != null) // CurrentProgram에 대한 null 체크 추가
+                    {
+                        chatData.CurrentProgram.Context = message;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"chatId {chatId}의 CurrentProgram이 null입니다.");
+                    }
                 }
                 else
                 {
-                    chatData.TargetProgram.Context = message;
+                    if (chatData.TargetProgram != null) // TargetProgram에 대한 null 체크 추가
+                    {
+                        chatData.TargetProgram.Context = message;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"chatId {chatId}의 TargetProgram이 null입니다.");
+                    }
                 }
                 Console.WriteLine($"ChatData {chatId}에 메시지가 추가되었습니다.");
 
@@ -251,7 +265,7 @@ namespace overlay_gpt.Network
                 {
                     ChatId = chatId,
                     Title = title,
-                    GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    GeneratedTimestamp = chatData.GeneratedTimestamp,
                     CurrentProgram = chatData.CurrentProgram,
                     TargetProgram = chatData.TargetProgram,
                     Texts = new List<TextData> { new TextData { Type = textType, Content = message } }
@@ -306,10 +320,18 @@ namespace overlay_gpt.Network
                     {
                         var fileName = Path.GetFileName(foundFile);
                         var filePath = foundFile;
+                        
+                        
+                        
 
                         convertedPrograms.Add(new List<string> { fileName, filePath });
                     }
                 }
+                
+                // 임시 파일 경로 생성. 나중에 지울 것
+                convertedPrograms.Add(new List<string> { "임시파일1.확장자", "임시파일경로1/임시파일경로2/임시파일1.확장자" });
+                convertedPrograms.Add(new List<string> { "임시파일2.확장자", "임시파일경로1/임시파일경로2/임시파일2.확장자" });
+                convertedPrograms.Add(new List<string> { "임시파일3.확장자", "임시파일경로1/임시파일경로2/임시파일3.확장자" });
 
                 // Vue로 메시지 전송
                 var responseData = new

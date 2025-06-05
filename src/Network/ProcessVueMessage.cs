@@ -8,6 +8,11 @@ using overlay_gpt.Network.Models.Flask;
 using overlay_gpt.Services;
 using overlay_gpt.Network.Models.Common;
 using System.Text.Json;
+using System.IO;
+using System.Diagnostics;
+using System.Windows.Automation;
+using System.Windows.Forms;
+using overlay_gpt.Services;
 
 namespace overlay_gpt.Network
 {
@@ -32,7 +37,8 @@ namespace overlay_gpt.Network
                 { "generate_chat_id", HandleGenerateChatId },
                 { "apply_response", HandleApplyResponse },
                 { "cancel_response", HandleCancelResponse },
-                { "request_top_workflows", HandleRequestTopWorkflows }
+                { "request_top_workflows", HandleRequestTopWorkflows },
+                { "select_workflow", HandleSelectWorkflow }
             };
         }
 
@@ -117,7 +123,7 @@ namespace overlay_gpt.Network
                     chatData = new ChatData
                     {
                         ChatId = vueRequest.ChatId,
-                        GeneratedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                         CurrentProgram = vueRequest.CurrentProgram,
                         TargetProgram = vueRequest.TargetProgram
                     };
@@ -129,7 +135,7 @@ namespace overlay_gpt.Network
                 {
                     ChatId = vueRequest.ChatId,
                     Prompt = vueRequest.Prompt,
-                    GeneratedTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                     RequestType = 1,
                     CurrentProgram = vueRequest.CurrentProgram,
                     TargetProgram = vueRequest.TargetProgram
@@ -170,7 +176,10 @@ namespace overlay_gpt.Network
             try
             {
                 var chatId = data["chat_id"]?.Value<int>();
-                var generatedTimestamp = data["generated_timestamp"]?.ToString();
+                var generatedTimestamp = data["generated_timestamp"]?.ToString(Newtonsoft.Json.Formatting.None).Trim('"');
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] JSON에서 가져온 타임스탬프: \"{generatedTimestamp}\"");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 타임스탬프 타입: {generatedTimestamp?.GetType().FullName}");
 
                 if (chatId == null || string.IsNullOrEmpty(generatedTimestamp))
                 {
@@ -305,6 +314,74 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"워크플로우 요청 처리 중 오류 발생: {ex.Message}");
+                throw;
+            }
+        }
+
+        private async Task HandleSelectWorkflow(JObject data)
+        {
+            try
+            {
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 워크플로우 선택 프로세스 시작");
+                
+                var chatId = data["chat_id"]?.Value<int>();
+                var fileType = data["file_type"]?.ToString();
+                var targetProgram = data["target_program"]?.ToObject<string[]>();
+
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파라미터 확인 - ChatId: {chatId}, FileType: {fileType}, TargetProgram 길이: {targetProgram?.Length}");
+
+                if (chatId == null || string.IsNullOrEmpty(fileType) || targetProgram == null || targetProgram.Length < 2)
+                {
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 오류: 필수 파라미터 누락");
+                    throw new Exception("필수 파라미터가 누락되었습니다.");
+                }
+
+                var chatData = ChatDataManager.Instance.GetChatDataById(chatId.Value);
+                if (chatData == null)
+                {
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 오류: Chat ID {chatId}에 해당하는 데이터를 찾을 수 없음");
+                    throw new Exception($"Chat ID {chatId}에 해당하는 데이터를 찾을 수 없습니다.");
+                }
+
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData 조회 성공");
+
+                var filePath = targetProgram[1];
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
+
+                // 파일 내용 읽기
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 시작");
+                var contextReader = new TargetProgContextReader();
+                string fileContent = await contextReader.ReadFileContent(filePath, fileType);
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 완료 - 크기: {fileContent.Length} 문자");
+
+                // 파일 정보 가져오기
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 시작");
+                var ntfsFileFinder = new NtfsFileFinder();
+                var fileInfo = ntfsFileFinder.GetFileInfo(filePath);
+                if (fileInfo.FileId == 0 || fileInfo.VolumeId == 0)
+                {
+                    throw new Exception("파일 정보를 가져올 수 없습니다.");
+                }
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 완료");
+
+                // ChatData의 target_program 업데이트
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 시작");
+                chatData.TargetProgram = new ProgramInfo
+                {
+                    FilePath = filePath,
+                    FileType = fileType,
+                    FileId = fileInfo.FileId,
+                    VolumeId = fileInfo.VolumeId,
+                    GeneratedContext = fileContent
+                };
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 완료");
+
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 워크플로우 선택 프로세스 완료");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 워크플로우 선택 처리 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 스택 트레이스: {ex.StackTrace}");
                 throw;
             }
         }

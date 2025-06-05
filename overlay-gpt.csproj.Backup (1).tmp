@@ -24,17 +24,43 @@
     <PackageReference Include="MicrosoftOfficeCore" Version="15.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SocketIOClient" Version="3.1.2" />
-    <PackageReference Include="System.Drawing.Common" Version="9.0.5" />
     <PackageReference Include="System.Runtime.InteropServices.RuntimeInformation" Version="4.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="7.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="7.0.0" />
     <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
-    <PackageReference Include="HtmlAgilityPack" Version="1.12.1" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.59" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="src\**\*.cs" />
     <Page Include="src\**\*.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <COMReference Include="HwpObjectLib">
+      <WrapperTool>tlbimp</WrapperTool>
+      <VersionMinor>0</VersionMinor>
+      <VersionMajor>1</VersionMajor>
+      <Guid>7d2b6f3c-1d95-4e0c-bf5a-5ee564186fbc</Guid>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="HwpAutomationAppLib">
+      <WrapperTool>tlbimp</WrapperTool>
+      <VersionMinor>0</VersionMinor>
+      <VersionMajor>1</VersionMajor>
+      <Guid>cb0895b7-bac9-4e39-a78f-0830205fff57</Guid>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="HWPEQ5XLib">
+      <WrapperTool>tlbimp</WrapperTool>
+      <VersionMinor>0</VersionMinor>
+      <VersionMajor>1</VersionMajor>
+      <Guid>8f2aa5c2-8c9c-11d3-8ac6-00a024cd2088</Guid>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
     <Compile Update="src\**\*.g.cs">
       <DependentUpon>%(Filename)</DependentUpon>
     </Compile>
@@ -55,14 +81,6 @@
     </Reference>
     <Reference Include="Microsoft.Office.Interop.PowerPoint">
       <HintPath>lib\Interop.Microsoft.Office.Interop.PowerPoint.dll</HintPath>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </Reference>
-    <Reference Include="HwpAutomationAppLib">
-      <HintPath>lib\Interop.HwpAutomationAppLib.dll</HintPath>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </Reference>
-    <Reference Include="HwpObjectLib">
-      <HintPath>lib\Interop.HwpObjectLib.dll</HintPath>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
   </ItemGroup>
