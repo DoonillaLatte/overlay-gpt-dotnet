@@ -8,12 +8,19 @@ using System.Diagnostics;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.IO;
+using Forms = System.Windows.Forms;
+using System.Text.RegularExpressions;
+using HtmlAgilityPack;
+using System.Linq;
+using System.Windows.Forms;
+using WordApp = Microsoft.Office.Interop.Word.Application;
+using HtmlDoc = HtmlAgilityPack.HtmlDocument;
 
 namespace overlay_gpt
 {
     public class WordContextReader : BaseContextReader
     {
-        private Application? _wordApp;
+        private WordApp? _wordApp;
         private Document? _document;
 
         [DllImport("user32.dll")]
@@ -135,105 +142,7 @@ namespace overlay_gpt
             return null;
         }
 
-        private string GetStyledText(string text, Dictionary<string, object> styleAttributes)
-        {
-            string result = text;
-            if (styleAttributes.ContainsKey("UnderlineStyle") && styleAttributes["UnderlineStyle"]?.ToString() == "Single")
-                result = $"<u>{result}</u>";
-            if (styleAttributes.ContainsKey("FontWeight") && styleAttributes["FontWeight"]?.ToString() == "Bold")
-                result = $"<b>{result}</b>";
-            if (styleAttributes.ContainsKey("FontItalic") && Convert.ToBoolean(styleAttributes["FontItalic"]))
-                result = $"<i>{result}</i>";
-            if (styleAttributes.ContainsKey("FontStrikethrough") && Convert.ToBoolean(styleAttributes["FontStrikethrough"]))
-                result = $"<s>{result}</s>";
-            return result;
-        }
-
-        private int ConvertColorToRGB(int bgrColor)
-        {
-            int r = bgrColor & 0xFF;
-            int g = (bgrColor >> 8) & 0xFF;
-            int b = (bgrColor >> 16) & 0xFF;
-            return (r << 16) | (g << 8) | b;
-        }
-
-        private int GetHighlightColorRGB(int highlightColor)
-        {
-            // 사용자 정의 RGB 색상인 경우 (0xFFFFFF보다 큰 값)
-            if (highlightColor > 0xFFFFFF)
-            {
-                return ConvertColorToRGB(highlightColor);
-            }
-
-            // WdColorIndex 열거형 값에 따른 RGB 색상 매핑
-            switch (highlightColor)
-            {
-                case (int)WdColorIndex.wdYellow: return 0xFFFF00;  // 노랑
-                case (int)WdColorIndex.wdBrightGreen: return 0x00FF00;  // 밝은 초록
-                case (int)WdColorIndex.wdTurquoise: return 0x00FFFF;  // 청록
-                case (int)WdColorIndex.wdPink: return 0xFF00FF;  // 분홍
-                case (int)WdColorIndex.wdBlue: return 0x0000FF;  // 파랑
-                case (int)WdColorIndex.wdRed: return 0xFF0000;  // 빨강
-                case (int)WdColorIndex.wdDarkBlue: return 0x000080;  // 진한 파랑
-                case (int)WdColorIndex.wdTeal: return 0x008080;  // 청녹
-                case (int)WdColorIndex.wdGreen: return 0x008000;  // 초록
-                case (int)WdColorIndex.wdViolet: return 0x800080;  // 보라
-                case (int)WdColorIndex.wdDarkRed: return 0x800000;  // 진한 빨강
-                case (int)WdColorIndex.wdDarkYellow: return 0x808000;  // 진한 노랑
-                case (int)WdColorIndex.wdGray50: return 0x808080;  // 회색
-                case (int)WdColorIndex.wdGray25: return 0xC0C0C0;  // 연한 회색
-                default: return 0xFFFFFF;  // 기본값 (흰색)
-            }
-        }
-
-        private string GetTextStyleString(Dictionary<string, object> styleAttributes)
-        {
-            var styleList = new List<string>();
-            
-            if (styleAttributes.ContainsKey("FontName"))
-            {
-                string fontName = styleAttributes["FontName"]?.ToString() ?? string.Empty;
-                if (!string.IsNullOrEmpty(fontName) && fontName != "Calibri" && fontName != "Arial" && fontName != "맑은 고딕")
-                {
-                    styleList.Add($"font-family: {fontName}");
-                }
-            }
-            
-            if (styleAttributes.ContainsKey("FontSize"))
-            {
-                double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
-                if (fontSize != 11)
-                {
-                    styleList.Add($"font-size: {fontSize}pt");
-                }
-            }
-
-            if (styleAttributes.ContainsKey("ForegroundColor"))
-            {
-                int fgColor = Convert.ToInt32(styleAttributes["ForegroundColor"]);
-                if (fgColor != 0)
-                {
-                    int rgbColor = ConvertColorToRGB(fgColor);
-                    string hexColor = $"#{rgbColor:X6}";
-                    styleList.Add($"color: {hexColor}");
-                }
-            }
-
-            if (styleAttributes.ContainsKey("HighlightColor"))
-            {
-                int highlightColor = Convert.ToInt32(styleAttributes["HighlightColor"]);
-                if (highlightColor != 0)
-                {
-                    int rgbColor = GetHighlightColorRGB(highlightColor);
-                    string hexColor = $"#{rgbColor:X6}";
-                    styleList.Add($"background-color: {hexColor}");
-                }
-            }
-
-            return string.Join("; ", styleList);
-        }
-
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle()
         {
             try
             {
@@ -255,7 +164,7 @@ namespace overlay_gpt
                         Console.WriteLine($"- 프로세스 ID: {process.Id}");
                         Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
                         Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
-                        
+
                         if (process.MainWindowHandle == GetForegroundWindow())
                         {
                             activeWordProcess = process;
@@ -273,145 +182,92 @@ namespace overlay_gpt
                 try
                 {
                     Console.WriteLine("Word COM 객체 가져오기 시도...");
-                    _wordApp = (Application)GetActiveObject("Word.Application");
+                    _wordApp = (WordApp)GetActiveObject("Word.Application");
                     Console.WriteLine("Word COM 객체 가져오기 성공");
 
                     Console.WriteLine("활성 문서 가져오기 시도...");
                     _document = _wordApp.ActiveDocument;
-                    
+
                     if (_document == null)
                     {
                         Console.WriteLine("활성 문서를 찾을 수 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
-                    
+
                     Console.WriteLine($"활성 문서 정보:");
                     Console.WriteLine($"- 문서 이름: {_document.Name}");
                     Console.WriteLine($"- 전체 경로: {_document.FullName}");
                     Console.WriteLine($"- 저장 여부: {(_document.Saved ? "저장됨" : "저장되지 않음")}");
                     Console.WriteLine($"- 읽기 전용: {(_document.ReadOnly ? "예" : "아니오")}");
 
-                    var range = readAllContent ? _document.Content : _wordApp.Selection.Range;
-                    if (range == null)
+                    var selection = _wordApp.Selection;
+                    if (selection == null)
                     {
                         Console.WriteLine("선택된 텍스트가 없습니다.");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    string selectedText = range.Text;
-                    var styleAttributes = new Dictionary<string, object>();
-                    var styledTextBuilder = new StringBuilder();
-
-                    // 전체 문서의 라인 수를 기준으로 선택된 텍스트의 시작과 끝 라인 번호 계산
-                    int totalLines = _document.ComputeStatistics(WdStatistic.wdStatisticLines);
-                    int startLine = 1;
-                    int endLine = totalLines;
-
-                    // 선택된 텍스트의 시작과 끝 위치를 기준으로 라인 번호 계산
-                    int selectionStart = range.Start;
-                    int selectionEnd = range.End;
-
-                    for (int i = 1; i <= totalLines; i++)
+                    // HTML 형식으로 클립보드 복사 시도
+                    try
                     {
-                        var lineRange = _document.Range(_document.GoTo(WdGoToItem.wdGoToLine, WdGoToDirection.wdGoToAbsolute, i).Start,
-                                                      _document.GoTo(WdGoToItem.wdGoToLine, WdGoToDirection.wdGoToAbsolute, i).End);
-                        
-                        if (lineRange.Start <= selectionStart && lineRange.End >= selectionStart)
+                        selection.Copy();
+                        if (Clipboard.ContainsText(TextDataFormat.Html))
                         {
-                            startLine = i;
-                        }
-                        if (lineRange.Start <= selectionEnd && lineRange.End >= selectionEnd)
-                        {
-                            endLine = i;
-                            break;
-                        }
-                    }
+                            string htmlContent = Clipboard.GetText(TextDataFormat.Html);
 
-                    string lineNumber = $"{startLine}-{endLine}";
-
-                    // 선택된 텍스트의 각 부분에 대해 스타일 정보 수집
-                    var start = range.Start;
-                    var end = range.End;
-
-                    Dictionary<string, object>? currentStyle = null;
-                    var currentTextBuilder = new StringBuilder();
-
-                    for (int i = start; i < end; i++)
-                    {
-                        var charRange = _document.Range(i, i + 1);
-                        var comFont = (WordFont)charRange.Font;
-                        var charStyle = new Dictionary<string, object>
-                        {
-                            ["FontName"] = comFont.Name,
-                            ["FontSize"] = comFont.Size,
-                            ["FontWeight"] = comFont.Bold == -1 ? "Bold" : "Normal",
-                            ["FontItalic"] = comFont.Italic == -1,
-                            ["UnderlineStyle"] = comFont.Underline == WdUnderline.wdUnderlineSingle ? "Single" : "None",
-                            ["ForegroundColor"] = comFont.Color,
-                            ["HighlightColor"] = charRange.HighlightColorIndex
-                        };
-
-                        string currentChar = charRange.Text;
-
-                        // 줄넘김 처리
-                        if (currentChar == "\r" || currentChar == "\n")
-                        {
-                            // 현재까지의 텍스트를 스타일과 함께 추가
-                            if (currentStyle != null && currentTextBuilder.Length > 0)
+                            // 1) <!--StartFragment--> 와 <!--EndFragment--> 사이의 순수 HTML만 추출
+                            int startIdx = htmlContent.IndexOf("<!--StartFragment-->");
+                            int endIdx = htmlContent.IndexOf("<!--EndFragment-->");
+                            if (startIdx != -1 && endIdx != -1 && endIdx > startIdx)
                             {
-                                string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
-                                string styleString = GetTextStyleString(currentStyle);
-                                if (!string.IsNullOrEmpty(styleString))
+                                int fragContentStart = startIdx + "<!--StartFragment-->".Length;
+                                int fragLength = endIdx - fragContentStart;
+                                string rawFragment = htmlContent.Substring(fragContentStart, fragLength);
+
+                                // 원본 HTML 출력
+                                Console.WriteLine("=== 원본 HTML 시작 ===");
+                                Console.WriteLine(rawFragment);
+                                Console.WriteLine("=== 원본 HTML 끝 ===");
+
+                                // 2) 불필요 태그/속성 제거 및 인접 노드 병합
+                                //    + 최종적으로 줄바꿈/공백 정리
+                                string cleanedHtml = CleanAndNormalizeHtml(rawFragment);
+
+                                // test.html 파일 업데이트
+                                try
                                 {
-                                    styledText = $"<span style='{styleString}'>{styledText}</span>";
+                                    string htmlTemplate = @"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>텍스트 길이: {1}자</title>
+</head>
+<body>
+{0}
+</body>
+</html>";
+
+                                    string fullHtml = string.Format(htmlTemplate, cleanedHtml, cleanedHtml.Length);
+                                    File.WriteAllText("test.html", fullHtml);
+                                    Console.WriteLine("test.html 파일이 성공적으로 업데이트되었습니다.");
                                 }
-                                styledTextBuilder.Append(styledText);
-                                currentTextBuilder.Clear();
-                            }
-                            styledTextBuilder.Append("<br>");
-                            continue;
-                        }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
+                                }
 
-                        if (currentStyle == null)
-                        {
-                            currentStyle = charStyle;
-                            currentTextBuilder.Append(currentChar);
-                        }
-                        else if (AreStylesEqual(currentStyle, charStyle))
-                        {
-                            currentTextBuilder.Append(currentChar);
-                        }
-                        else
-                        {
-                            // 현재까지의 텍스트를 스타일과 함께 추가
-                            string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
-                            string styleString = GetTextStyleString(currentStyle);
-                            if (!string.IsNullOrEmpty(styleString))
-                            {
-                                styledText = $"<span style='{styleString}'>{styledText}</span>";
+                                return (cleanedHtml, new Dictionary<string, object>(), string.Empty);
                             }
-                            styledTextBuilder.Append(styledText);
-
-                            // 새로운 스타일로 시작
-                            currentStyle = charStyle;
-                            currentTextBuilder.Clear();
-                            currentTextBuilder.Append(currentChar);
                         }
                     }
-
-                    // 마지막 텍스트 처리
-                    if (currentStyle != null && currentTextBuilder.Length > 0)
+                    catch (Exception ex)
                     {
-                        string styledText = GetStyledText(currentTextBuilder.ToString(), currentStyle);
-                        string styleString = GetTextStyleString(currentStyle);
-                        if (!string.IsNullOrEmpty(styleString))
-                        {
-                            styledText = $"<span style='{styleString}'>{styledText}</span>";
-                        }
-                        styledTextBuilder.Append(styledText);
+                        Console.WriteLine($"HTML 클립보드 복사 실패: {ex.Message}");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    return (styledTextBuilder.ToString(), styleAttributes, lineNumber);
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
                 catch (Exception ex)
                 {
@@ -433,15 +289,306 @@ namespace overlay_gpt
             }
         }
 
+        /// <summary>
+        /// 1) 불필요한 메타 태그/Office 네임스페이스 제거  
+        /// 2) 빈 태그 스니펫 제거  
+        /// 3) 인접 노드 병합  
+        /// 4) lang, mso-* 속성 제거  
+        /// 5) 빈 style 속성 제거  
+        /// 6) 최종적으로 줄바꿈(\r,\n) 제거 및 태그 사이 공백 최소화
+        /// </summary>
+        private string CleanAndNormalizeHtml(string rawFragment)
+        {
+            // 1) HtmlAgilityPack으로 로드 (wrapper를 씌워 파싱)
+            var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+            htmlDoc.LoadHtml("<div id=\"wrapper\">" + rawFragment + "</div>");
+            HtmlNode wrapper = htmlDoc.GetElementbyId("wrapper")!;
+
+            // 2) 불필요한 메타/Office 전용 XML/네임스페이스/조건부 주석 제거
+            RemoveUnwantedNodes(wrapper);
+
+            // 3) style 내부에 표현된 Word 전용 속성과 lang 속성 제거
+            RemoveWordSpecificAttributes(wrapper);
+
+            // 4) class 속성 제거
+            RemoveClassAttributes(wrapper);
+
+            // 5) 빈 <span> 등 제거
+            RemoveEmptySpans(wrapper);
+
+            // 6) 인접한 <span> 병합
+            MergeAdjacentSpans(wrapper);
+
+            // 7) 빈 style 속성 제거 (위에서 이미 없는 style들은 지워졌을 것)
+            RemoveEmptyStyleAttributes(wrapper);
+
+            // 8) 이미지 데이터 분리 및 참조 처리
+            ProcessImages(wrapper);
+
+            // 9) 최종 HTML 문자열 추출
+            string interimHtml = wrapper.InnerHtml;
+
+            // 10) 보이지 않는 줄넘김(개행) 제거 및 태그 사이 공백 최소화
+            string normalized = NormalizeWhitespace(interimHtml);
+
+            return normalized;
+        }
+
+        /// <summary>
+        /// 불필요한 메타, xml, Word 전용 네임스페이스, 조건부 주석 등을 삭제
+        /// </summary>
+        private void RemoveUnwantedNodes(HtmlNode root)
+        {
+            // 1) <meta> 태그 전부 제거
+            var metas = root.SelectNodes("//meta");
+            if (metas != null)
+            {
+                foreach (var meta in metas)
+                    meta.Remove();
+            }
+
+            // 2) <xml> ... </xml> 노드 (Office 전용) 제거
+            var xmlNodes = root.SelectNodes("//xml");
+            if (xmlNodes != null)
+            {
+                foreach (var node in xmlNodes)
+                    node.Remove();
+            }
+
+            // 3) Word 고유 네임스페이스가 들어간 모든 노드 제거 (예: <o:…>, <w:…>, <v:…>)
+            var allNodes = root.SelectNodes("//*");
+            if (allNodes != null)
+            {
+                foreach (var node in allNodes.ToList()) // ToList 로 복사 후 순회
+                {
+                    if (node.Name.StartsWith("o:", StringComparison.OrdinalIgnoreCase)
+                        || node.Name.StartsWith("w:", StringComparison.OrdinalIgnoreCase)
+                        || node.Name.StartsWith("v:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        node.Remove();
+                    }
+                }
+            }
+
+            // 4) 조건부 주석(<!--[if gte mso ...]> ... <![endif]-->) 제거
+            var comments = root.SelectNodes("//comment()");
+            if (comments != null)
+            {
+                foreach (var commentNode in comments.Cast<HtmlCommentNode>())
+                {
+                    commentNode.Remove();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 모든 노드에서 Word 전용 'mso-...' 속성(스타일)과 lang 속성을 제거
+        /// </summary>
+        private void RemoveWordSpecificAttributes(HtmlNode root)
+        {
+            // 1) 모든 노드를 순회하면서 lang 속성을 제거
+            var nodesWithLang = root.SelectNodes("//*[@lang]");
+            if (nodesWithLang != null)
+            {
+                foreach (var node in nodesWithLang)
+                {
+                    node.Attributes.Remove("lang");
+                }
+            }
+
+            // 2) style 속성이 있는 노드에서 mso-*, mso-fareast-language 등을 삭제
+            var nodesWithStyle = root.SelectNodes("//*[@style]");
+            if (nodesWithStyle != null)
+            {
+                foreach (var node in nodesWithStyle.ToList())
+                {
+                    var styleAttr = node.GetAttributeValue("style", "").Trim();
+                    if (string.IsNullOrEmpty(styleAttr))
+                    {
+                        node.Attributes.Remove("style");
+                        continue;
+                    }
+
+                    // 세미콜론(;)을 기준으로 개별 CSS 선언을 분리
+                    var declarations = styleAttr
+                        .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(decl => decl.Trim())
+                        // mso-로 시작하는 모든 선언 제거
+                        .Where(decl => !decl.StartsWith("mso-", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (declarations.Any())
+                    {
+                        // 나머지 유효 CSS 선언들을 다시 합친 뒤 속성 값으로 설정
+                        string newStyleValue = string.Join(";", declarations) + ";";
+                        node.SetAttributeValue("style", newStyleValue);
+                    }
+                    else
+                    {
+                        // 남은 style 선언이 없다면 아예 style 속성을 제거
+                        node.Attributes.Remove("style");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 모든 노드에서 class 속성을 제거
+        /// </summary>
+        private void RemoveClassAttributes(HtmlNode root)
+        {
+            var nodesWithClass = root.SelectNodes("//*[@class]");
+            if (nodesWithClass != null)
+            {
+                foreach (var node in nodesWithClass)
+                {
+                    node.Attributes.Remove("class");
+                }
+            }
+        }
+
+        /// <summary>
+        /// style 속성이 비어 있거나 내용이 없는 <span> 태그 제거
+        /// </summary>
+        private void RemoveEmptySpans(HtmlNode root)
+        {
+            var spans = root.SelectNodes("//span");
+            if (spans != null)
+            {
+                foreach (var span in spans.ToList())
+                {
+                    string styleAttr = span.GetAttributeValue("style", "").Trim();
+                    string inner = span.InnerHtml.Trim();
+                    if (string.IsNullOrEmpty(styleAttr) && string.IsNullOrEmpty(inner))
+                    {
+                        span.Remove();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 인접한 <span> 태그들 중 style 속성이 동일하면 병합
+        /// </summary>
+        private void MergeAdjacentSpans(HtmlNode root)
+        {
+            var parentNodes = root.SelectNodes("//*");
+            if (parentNodes == null) return;
+
+            foreach (var parent in parentNodes)
+            {
+                var children = parent.ChildNodes.ToList();
+                for (int i = 0; i < children.Count - 1; i++)
+                {
+                    var curr = children[i];
+                    var next = children[i + 1];
+
+                    if (curr.Name.Equals("span", StringComparison.OrdinalIgnoreCase)
+                        && next.Name.Equals("span", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string styleCurr = curr.GetAttributeValue("style", "");
+                        string styleNext = next.GetAttributeValue("style", "");
+                        if (styleCurr == styleNext)
+                        {
+                            curr.InnerHtml = curr.InnerHtml + next.InnerHtml;
+                            next.Remove();
+                            // 노드 리스트 갱신 후 인덱스 재조정
+                            children = parent.ChildNodes.ToList();
+                            i--;
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 인라인 style="" 속성이 비어 있으면 해당 속성 제거
+        /// </summary>
+        private void RemoveEmptyStyleAttributes(HtmlNode root)
+        {
+            var nodesWithStyle = root.SelectNodes("//*[@style]");
+            if (nodesWithStyle != null)
+            {
+                foreach (var node in nodesWithStyle.ToList())
+                {
+                    var val = node.GetAttributeValue("style", "").Trim();
+                    if (string.IsNullOrEmpty(val))
+                        node.Attributes.Remove("style");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 이미지 데이터를 분리하고 참조로 대체
+        /// </summary>
+        private void ProcessImages(HtmlNode root)
+        {
+            // 이미지 저장 디렉토리 생성
+            string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+            if (!Directory.Exists(imageDir))
+            {
+                Directory.CreateDirectory(imageDir);
+            }
+
+            // 모든 이미지 노드 찾기
+            var images = root.SelectNodes("//img");
+            if (images != null)
+            {
+                foreach (var img in images)
+                {
+                    string src = img.GetAttributeValue("src", "");
+                    if (src.StartsWith("data:image"))
+                    {
+                        try
+                        {
+                            // Base64 데이터 추출
+                            string[] parts = src.Split(',');
+                            if (parts.Length > 1)
+                            {
+                                string imageData = parts[1];
+                                string imageId = Guid.NewGuid().ToString();
+                                string imagePath = Path.Combine(imageDir, $"{imageId}.jpg");
+
+                                // 이미지 데이터를 파일로 저장
+                                byte[] imageBytes = Convert.FromBase64String(imageData);
+                                File.WriteAllBytes(imagePath, imageBytes);
+
+                                // HTML에서는 상대 경로로 참조
+                                img.SetAttributeValue("src", $"images/{imageId}.jpg");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"이미지 처리 중 오류 발생: {ex.Message}");
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 1) 보이지 않는 줄바꿈(\r, \n) 전부 제거  
+        /// 2) 태그 사이 공백(스페이스/탭/개행) 제거: ">   <" → "><"  
+        /// 3) 연속된 공백(스페이스) 2개 이상 → 1개로 축소  
+        /// </summary>
+        private string NormalizeWhitespace(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+                return string.Empty;
+
+            // 원본 공백 유지
+            return html.Trim();
+        }
+
         public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
-            Application? tempWordApp = null;
+            WordApp? tempWordApp = null;
             Document? tempDocument = null;
             
             try
             {
                 Console.WriteLine("Word COM 객체 가져오기 시도...");
-                tempWordApp = (Application)GetActiveObject("Word.Application");
+                tempWordApp = (WordApp)GetActiveObject("Word.Application");
                 Console.WriteLine("Word COM 객체 가져오기 성공");
 
                 Console.WriteLine("활성 문서 가져오기 시도...");
@@ -498,19 +645,6 @@ namespace overlay_gpt
                 if (tempDocument != null) Marshal.ReleaseComObject(tempDocument);
                 if (tempWordApp != null) Marshal.ReleaseComObject(tempWordApp);
             }
-        }
-
-        private bool AreStylesEqual(Dictionary<string, object> style1, Dictionary<string, object> style2)
-        {
-            if (style1.Count != style2.Count) return false;
-
-            foreach (var key in style1.Keys)
-            {
-                if (!style2.ContainsKey(key)) return false;
-                if (!style1[key].Equals(style2[key])) return false;
-            }
-
-            return true;
         }
     }
 }
