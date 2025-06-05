@@ -201,6 +201,7 @@ namespace overlay_gpt
                 // HTML 문자열 전처리
                 text = text.Replace("\x0b", ""); // 수직 탭 제거
                 text = text.Replace("\u200b", ""); // 제로 너비 공백 제거
+                text = text.Replace("\\u0027", "'"); // 유니코드 이스케이프 시퀀스 처리
                 
                 Console.WriteLine($"파싱할 HTML: {text}");
                 htmlDoc.LoadHtml(text);
@@ -229,28 +230,33 @@ namespace overlay_gpt
                             var style = node.GetAttributeValue("style", "");
                             Console.WriteLine($"스타일 속성: {style}");
                             
-                            // 먼저 텍스트를 삽입
-                            currentNodeRange.Text = node.InnerText;
-                            
-                            // 텍스트 삽입 후 범위 다시 설정
-                            currentNodeRange = _document.Range(wordRange.Start, wordRange.Start + node.InnerText.Length);
-                            
-                            var font = currentNodeRange.Font;
-                            Console.WriteLine("폰트 객체 가져오기 성공");
-
                             // 스타일 속성 파싱
                             var styleAttributes = style.Split(';')
                                 .Select(s => s.Trim().Split(':'))
                                 .Where(p => p.Length == 2)
-                                .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+                                .ToDictionary(p => p[0].Trim(), p => p[1].Trim().Trim('\''));
 
                             Console.WriteLine($"파싱된 스타일 속성 수: {styleAttributes.Count}");
+
+                            // 텍스트 삽입 전에 스타일 설정
+                            var font = currentNodeRange.Font;
+                            Console.WriteLine("폰트 객체 가져오기 성공");
+
+                            // 스타일 초기화
+                            font.Name = "맑은 고딕"; // 기본 폰트
+                            font.Size = 10; // 기본 크기
+                            font.Color = WdColor.wdColorBlack; // 기본 색상
+                            font.Bold = 0; // 기본 굵기
+                            font.Italic = 0; // 기본 기울임
+                            font.Underline = WdUnderline.wdUnderlineNone; // 기본 밑줄
+                            font.StrikeThrough = 0; // 기본 취소선
+                            currentNodeRange.HighlightColorIndex = WdColorIndex.wdNoHighlight; // 기본 배경색
 
                             // 폰트 패밀리
                             if (styleAttributes.TryGetValue("font-family", out var fontFamily))
                             {
                                 Console.WriteLine($"폰트 패밀리 설정: {fontFamily}");
-                                font.Name = fontFamily.Trim('\'');
+                                font.Name = fontFamily;
                             }
 
                             // 폰트 크기
@@ -312,6 +318,12 @@ namespace overlay_gpt
                                 Console.WriteLine("취소선 스타일 적용");
                                 font.StrikeThrough = -1;
                             }
+
+                            // 텍스트 삽입
+                            currentNodeRange.Text = node.InnerText;
+                            
+                            // 텍스트 삽입 후 범위 다시 설정
+                            currentNodeRange = _document.Range(wordRange.Start, wordRange.Start + node.InnerText.Length);
                         }
                         
                         // 다음 노드를 위한 범위 업데이트
