@@ -142,6 +142,11 @@ namespace overlay_gpt
                         _worksheet.Cells[endRow, endCol]
                     ];
                     Console.WriteLine("셀 범위 설정 성공");
+
+                    // 선택된 범위의 내용과 스타일 모두 지우기
+                    Console.WriteLine("선택된 범위의 내용과 스타일 지우기...");
+                    selectedRange.Clear();
+                    Console.WriteLine("선택된 범위 초기화 완료");
                 }
                 catch (Exception ex)
                 {
@@ -257,13 +262,37 @@ namespace overlay_gpt
                                         }
 
                                         // 테두리
-                                        if (styleAttributes.TryGetValue("border", out var borderStyle))
+                                        var borderPositions = new Dictionary<string, (string style, XlBordersIndex index)>
                                         {
-                                            if (borderStyle.Contains("solid"))
+                                            { "border-top", (styleAttributes.TryGetValue("border-top", out var top) ? top.ToString() : "", XlBordersIndex.xlEdgeTop) },
+                                            { "border-right", (styleAttributes.TryGetValue("border-right", out var right) ? right.ToString() : "", XlBordersIndex.xlEdgeRight) },
+                                            { "border-bottom", (styleAttributes.TryGetValue("border-bottom", out var bottom) ? bottom.ToString() : "", XlBordersIndex.xlEdgeBottom) },
+                                            { "border-left", (styleAttributes.TryGetValue("border-left", out var left) ? left.ToString() : "", XlBordersIndex.xlEdgeLeft) }
+                                        };
+
+                                        foreach (var position in borderPositions)
+                                        {
+                                            if (!string.IsNullOrEmpty(position.Value.style) && position.Value.style.Contains("solid"))
                                             {
-                                                Console.WriteLine("테두리 스타일 적용");
-                                                cellRange.Borders.LineStyle = XlLineStyle.xlContinuous;
-                                                cellRange.Borders.Color = 0; // 검은색
+                                                Console.WriteLine($"{position.Key} 스타일 적용");
+                                                var border = cellRange.Borders[position.Value.index];
+                                                border.LineStyle = XlLineStyle.xlContinuous;
+                                                
+                                                // 테두리 두께 설정
+                                                if (position.Value.style.Contains("2px"))
+                                                {
+                                                    border.Weight = XlBorderWeight.xlMedium;
+                                                }
+                                                else if (position.Value.style.Contains("3px"))
+                                                {
+                                                    border.Weight = XlBorderWeight.xlThick;
+                                                }
+                                                else
+                                                {
+                                                    border.Weight = XlBorderWeight.xlThin;
+                                                }
+                                                
+                                                border.Color = 0; // 검은색
                                             }
                                         }
 

@@ -30,6 +30,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="7.0.0" />
     <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.1" />
+    <PackageReference Include="ExCSS" Version="4.1.4" />
   </ItemGroup>
 
   <ItemGroup>
