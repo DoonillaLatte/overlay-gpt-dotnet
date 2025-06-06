@@ -1,574 +1,525 @@
 using System;
 using System.Collections.Generic;
-using System.Windows.Automation;
-using Microsoft.Office.Interop.PowerPoint;
-using Microsoft.Office.Core;  // Office Core 15.0 네임스페이스
-using System.Runtime.InteropServices;
 using System.Diagnostics;
-using System.Runtime.InteropServices.ComTypes;
-using System.Text;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Windows.Forms;
+using HtmlAgilityPack;
+using Microsoft.Office.Core;
+using Microsoft.Office.Interop.PowerPoint;
+using PPTApp = Microsoft.Office.Interop.PowerPoint.Application;
 
 namespace overlay_gpt
 {
     public class PPTContextReader : BaseContextReader
     {
-        private Application? _pptApp;
+        private PPTApp? _pptApp;
         private Presentation? _presentation;
-        private Slide? _slide;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
         [DllImport("oleaut32.dll")]
-        private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
+        private static extern int GetActiveObject(
+            ref Guid rclsid,
+            IntPtr pvReserved,
+            [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
 
         [DllImport("ole32.dll")]
-        private static extern int CLSIDFromProgID([MarshalAs(UnmanagedType.LPWStr)] string lpszProgID, out Guid pclsid);
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern IntPtr CreateFile(
-            string lpFileName,
-            uint dwDesiredAccess,
-            uint dwShareMode,
-            IntPtr lpSecurityAttributes,
-            uint dwCreationDisposition,
-            uint dwFlagsAndAttributes,
-            IntPtr hTemplateFile);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetFileInformationByHandle(
-            IntPtr hFile,
-            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct BY_HANDLE_FILE_INFORMATION
-        {
-            public uint dwFileAttributes;
-            public FILETIME ftCreationTime;
-            public FILETIME ftLastAccessTime;
-            public FILETIME ftLastWriteTime;
-            public uint dwVolumeSerialNumber;
-            public uint nFileSizeHigh;
-            public uint nFileSizeLow;
-            public uint nNumberOfLinks;
-            public uint nFileIndexHigh;
-            public uint nFileIndexLow;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct FILETIME
-        {
-            public uint dwLowDateTime;
-            public uint dwHighDateTime;
-        }
-
-        private const uint GENERIC_READ = 0x80000000;
-        private const uint FILE_SHARE_READ = 0x00000001;
-        private const uint FILE_SHARE_WRITE = 0x00000002;
-        private const uint OPEN_EXISTING = 3;
+        private static extern int CLSIDFromProgID(
+            [MarshalAs(UnmanagedType.LPWStr)] string lpszProgID,
+            out Guid pclsid);
 
         private static object GetActiveObject(string progID)
         {
-            Guid clsid;
-            CLSIDFromProgID(progID, out clsid);
-            object obj;
-            GetActiveObject(ref clsid, IntPtr.Zero, out obj);
-            return obj;
+            CLSIDFromProgID(progID, out Guid clsid);
+            GetActiveObject(ref clsid, IntPtr.Zero, out object obj);
+            return obj!;
         }
 
-        private (ulong FileId, uint VolumeId)? GetFileId(string filePath)
-        {
-            try
-            {
-                Console.WriteLine($"GetFileId 호출 - 파일 경로: {filePath}");
-                
-                if (!File.Exists(filePath))
-                {
-                    Console.WriteLine("파일이 존재하지 않습니다.");
-                    return null;
-                }
-
-                IntPtr handle = CreateFile(
-                    filePath,
-                    GENERIC_READ,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    IntPtr.Zero,
-                    OPEN_EXISTING,
-                    0,
-                    IntPtr.Zero);
-
-                if (handle.ToInt64() == -1)
-                {
-                    Console.WriteLine($"CreateFile 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
-                    return null;
-                }
-
-                try
-                {
-                    BY_HANDLE_FILE_INFORMATION fileInfo;
-                    if (GetFileInformationByHandle(handle, out fileInfo))
-                    {
-                        ulong fileId = ((ulong)fileInfo.nFileIndexHigh << 32) | fileInfo.nFileIndexLow;
-                        Console.WriteLine($"파일 ID 정보 가져오기 성공:");
-                        Console.WriteLine($"- FileId: {fileId}");
-                        Console.WriteLine($"- VolumeId: {fileInfo.dwVolumeSerialNumber}");
-                        return (fileId, fileInfo.dwVolumeSerialNumber);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"GetFileInformationByHandle 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
-                    }
-                }
-                finally
-                {
-                    CloseHandle(handle);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"파일 ID 가져오기 오류: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
-            }
-            return null;
-        }
-
-        private string GetStyledText(string text, Dictionary<string, object> styleAttributes)
-        {
-            string result = text;
-            if (styleAttributes.ContainsKey("UnderlineStyle") && styleAttributes["UnderlineStyle"]?.ToString() == "Single")
-                result = $"<u>{result}</u>";
-            if (styleAttributes.ContainsKey("FontWeight") && styleAttributes["FontWeight"]?.ToString() == "Bold")
-                result = $"<b>{result}</b>";
-            if (styleAttributes.ContainsKey("FontItalic") && styleAttributes["FontItalic"] is MsoTriState italic && italic == MsoTriState.msoTrue)
-                result = $"<i>{result}</i>";
-            if (styleAttributes.ContainsKey("FontStrikethrough") && styleAttributes["FontStrikethrough"] is MsoTriState strikethrough && strikethrough == MsoTriState.msoTrue)
-                result = $"<s>{result}</s>";
-            if (styleAttributes.ContainsKey("FontSize"))
-            {
-                double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
-                result = $"<span style='font-size: {fontSize}pt'>{result}</span>";
-            }
-            return result;
-        }
-
-        private int ConvertColorToRGB(int bgrColor)
-        {
-            int r = bgrColor & 0xFF;
-            int g = (bgrColor >> 8) & 0xFF;
-            int b = (bgrColor >> 16) & 0xFF;
-            return (r << 16) | (g << 8) | b;
-        }
-
-        private string GetTextStyleString(Dictionary<string, object> styleAttributes)
-        {
-            var styleList = new List<string>();
-            
-            if (styleAttributes.ContainsKey("FontName"))
-            {
-                string fontName = styleAttributes["FontName"]?.ToString() ?? string.Empty;
-                if (!string.IsNullOrEmpty(fontName) && fontName != "Calibri" && fontName != "Arial" && fontName != "맑은 고딕")
-                {
-                    styleList.Add($"font-family: {fontName}");
-                }
-            }
-            
-            if (styleAttributes.ContainsKey("FontSize"))
-            {
-                double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
-                if (fontSize != 11)
-                {
-                    styleList.Add($"font-size: {fontSize}pt");
-                }
-            }
-
-            if (styleAttributes.ContainsKey("ForegroundColor"))
-            {
-                int fgColor = Convert.ToInt32(styleAttributes["ForegroundColor"]);
-                if (fgColor != 0)
-                {
-                    int rgbColor = ConvertColorToRGB(fgColor);
-                    string hexColor = $"#{rgbColor:X6}";
-                    styleList.Add($"color: {hexColor}");
-                }
-            }
-
-            // 텍스트 정렬 설정
-            string textAlign = "left";
-            if (styleAttributes.ContainsKey("TextAlign"))
-            {
-                textAlign = styleAttributes["TextAlign"]?.ToString() ?? "left";
-            }
-            styleList.Add($"text-align: {textAlign}");
-
-            // 수직 정렬 설정
-            string verticalAlign = "top";
-            if (styleAttributes.ContainsKey("VerticalAlign"))
-            {
-                verticalAlign = styleAttributes["VerticalAlign"]?.ToString() ?? "top";
-            }
-            styleList.Add($"vertical-align: {verticalAlign}");
-
-            // Flexbox 속성 설정
-            styleList.Add("display: flex");
-            styleList.Add("align-items: center");
-            
-            // 수평 정렬에 따른 justify-content 설정
-            switch (textAlign)
-            {
-                case "center":
-                    styleList.Add("justify-content: center");
-                    break;
-                case "right":
-                    styleList.Add("justify-content: flex-end");
-                    break;
-                default:
-                    styleList.Add("justify-content: flex-start");
-                    break;
-            }
-
-            // 수직 정렬에 따른 align-items 설정
-            switch (verticalAlign)
-            {
-                case "middle":
-                    styleList.Add("align-items: center");
-                    break;
-                case "bottom":
-                    styleList.Add("align-items: flex-end");
-                    break;
-                default:
-                    styleList.Add("align-items: flex-start");
-                    break;
-            }
-
-            return string.Join("; ", styleList);
-        }
-
-        private string GetShapeStyleString(Microsoft.Office.Interop.PowerPoint.Shape shape)
-        {
-            var styleList = new List<string>();
-            
-            // 위치와 크기
-            styleList.Add($"position: absolute");
-            styleList.Add($"left: {shape.Left}px");
-            styleList.Add($"top: {shape.Top}px");
-            styleList.Add($"width: {shape.Width}px");
-            styleList.Add($"height: {shape.Height}px");
-            
-            // 회전
-            if (shape.Rotation != 0)
-            {
-                styleList.Add($"transform: rotate({shape.Rotation}deg)");
-            }
-
-            // 투명도
-            if (shape.Fill.Transparency > 0)
-            {
-                double opacity = 1 - (shape.Fill.Transparency / 100.0);
-                styleList.Add($"opacity: {opacity}");
-            }
-            
-            // 배경색 및 채우기
-            if (shape.Fill.Visible == MsoTriState.msoTrue)
-            {
-                if (shape.Fill.Type == MsoFillType.msoFillGradient)
-                {
-                    // 그라데이션 처리
-                    var gradientStops = new List<string>();
-                    for (int i = 1; i <= shape.Fill.GradientStops.Count; i++)
-                    {
-                        var stop = shape.Fill.GradientStops[i];
-                        int rgbColor = ConvertColorToRGB(stop.Color.RGB);
-                        string hexColor = $"#{rgbColor:X6}";
-                        gradientStops.Add($"{hexColor} {stop.Position * 100}%");
-                    }
-                    string gradientDirection = shape.Fill.GradientAngle == 0 ? "to right" : 
-                                            shape.Fill.GradientAngle == 90 ? "to bottom" :
-                                            shape.Fill.GradientAngle == 180 ? "to left" :
-                                            "to top";
-                    styleList.Add($"background: linear-gradient({gradientDirection}, {string.Join(", ", gradientStops)})");
-                }
-                else if (shape.Fill.ForeColor.RGB != 0)
-                {
-                    int rgbColor = ConvertColorToRGB(shape.Fill.ForeColor.RGB);
-                    string hexColor = $"#{rgbColor:X6}";
-                    styleList.Add($"background-color: {hexColor}");
-                }
-            }
-            
-            // 테두리
-            if (shape.Line.Visible == MsoTriState.msoTrue)
-            {
-                int borderColor = ConvertColorToRGB(shape.Line.ForeColor.RGB);
-                string borderHexColor = $"#{borderColor:X6}";
-                string borderStyle = "solid"; // 기본값
-                if (shape.Line.DashStyle != MsoLineDashStyle.msoLineSolid)
-                {
-                    borderStyle = "dashed";
-                }
-                styleList.Add($"border: {shape.Line.Weight}px {borderStyle} {borderHexColor}");
-            }
-
-            // 그림자 효과
-            if (shape.Shadow.Visible == MsoTriState.msoTrue)
-            {
-                int shadowColor = ConvertColorToRGB(shape.Shadow.ForeColor.RGB);
-                string shadowHexColor = $"#{shadowColor:X6}";
-                double shadowBlur = shape.Shadow.Size;
-                double shadowOffsetX = shape.Shadow.OffsetX;
-                double shadowOffsetY = shape.Shadow.OffsetY;
-                double shadowTransparency = shape.Shadow.Transparency / 100.0;
-                styleList.Add($"box-shadow: {shadowOffsetX}px {shadowOffsetY}px {shadowBlur}px rgba({shadowColor >> 16 & 0xFF}, {shadowColor >> 8 & 0xFF}, {shadowColor & 0xFF}, {1 - shadowTransparency})");
-            }
-
-            // 모서리 둥글기
-            if (shape.AutoShapeType != MsoAutoShapeType.msoShapeRectangle)
-            {
-                // 자동 도형의 경우 모서리 둥글기 적용
-                styleList.Add($"border-radius: {Math.Min(shape.Width, shape.Height) * 0.1}px");
-            }
-
-            // 3D 효과
-            if (shape.ThreeD.Visible == MsoTriState.msoTrue)
-            {
-                styleList.Add($"transform-style: preserve-3d");
-                styleList.Add($"perspective: 1000px");
-                styleList.Add($"transform: rotateX({shape.ThreeD.RotationX}deg) rotateY({shape.ThreeD.RotationY}deg)");
-            }
-
-            // Z-인덱스 (레이어 순서)
-            styleList.Add($"z-index: {shape.ZOrderPosition}");
-
-            return string.Join("; ", styleList);
-        }
-
-        private string GetShapeType(Microsoft.Office.Interop.PowerPoint.Shape shape)
-        {
-            switch (shape.Type)
-            {
-                case MsoShapeType.msoAutoShape:
-                    return "div";
-                case MsoShapeType.msoPicture:
-                    return "img";
-                case MsoShapeType.msoTextBox:
-                    return "div";
-                case MsoShapeType.msoLine:
-                    return "div";
-                case MsoShapeType.msoChart:
-                    return "div";
-                case MsoShapeType.msoTable:
-                    return "table";
-                case MsoShapeType.msoSmartArt:
-                    return "div";
-                default:
-                    return "div";
-            }
-        }
-
-        private string ConvertShapeToHtml(Microsoft.Office.Interop.PowerPoint.Shape shape)
-        {
-            string shapeType = GetShapeType(shape);
-            string styleString = GetShapeStyleString(shape);
-            string content = string.Empty;
-
-            if (shape.HasTextFrame == MsoTriState.msoTrue)
-            {
-                var textFrame = shape.TextFrame;
-                var textRange = textFrame.TextRange;
-                var styleAttributes = new Dictionary<string, object>();
-                
-                // 텍스트 스타일 속성 가져오기
-                styleAttributes["FontSize"] = textRange.Font.Size;
-                styleAttributes["FontName"] = textRange.Font.Name;
-                styleAttributes["FontWeight"] = textRange.Font.Bold == MsoTriState.msoTrue ? "Bold" : "Normal";
-                styleAttributes["FontItalic"] = textRange.Font.Italic;
-                styleAttributes["UnderlineStyle"] = textRange.Font.Underline;
-                styleAttributes["ForegroundColor"] = textRange.Font.Color.RGB;
-                
-                // 텍스트 정렬 설정
-                switch (textRange.ParagraphFormat.Alignment)
-                {
-                    case PpParagraphAlignment.ppAlignCenter:
-                        styleAttributes["TextAlign"] = "center";
-                        break;
-                    case PpParagraphAlignment.ppAlignRight:
-                        styleAttributes["TextAlign"] = "right";
-                        break;
-                    case PpParagraphAlignment.ppAlignJustify:
-                        styleAttributes["TextAlign"] = "justify";
-                        break;
-                    default:
-                        styleAttributes["TextAlign"] = "left";
-                        break;
-                }
-
-                switch (textFrame.VerticalAnchor)
-                {
-                    case MsoVerticalAnchor.msoAnchorMiddle:
-                        styleAttributes["VerticalAlign"] = "middle";
-                        break;
-                    case MsoVerticalAnchor.msoAnchorBottom:
-                        styleAttributes["VerticalAlign"] = "bottom";
-                        break;
-                    default:
-                        styleAttributes["VerticalAlign"] = "top";
-                        break;
-                }
-                
-                string textStyle = GetTextStyleString(styleAttributes);
-                content = $"<div style='{textStyle}'>{textRange.Text}</div>";
-            }
-            else if (shape.Type == MsoShapeType.msoPicture)
-            {
-                content = $"<img src='data:image/png;base64,...' alt='Image' />";
-            }
-
-            return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
-        }
-
+        /// <summary>
+        /// 도형(shape) 또는 텍스트가 선택된 상태에서 Copy()를 호출하면
+        /// 클립보드에 올라가는 HTML(Fragment) 또는 GVML 패키지(Zip)에서
+        /// 실제 도형 정보를 담고 있는 "clipboard/drawings/drawing1.xml"만 꺼내 반환합니다.
+        /// </summary>
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             try
             {
                 Console.WriteLine("PowerPoint 데이터 읽기 시작...");
 
+                // 1) 실행 중인 PowerPoint 프로세스 찾기
                 var pptProcesses = Process.GetProcessesByName("POWERPNT");
                 if (pptProcesses.Length == 0)
-                {
-                    Console.WriteLine("실행 중인 PowerPoint 애플리케이션을 찾을 수 없습니다.");
-                    throw new InvalidOperationException("PowerPoint is not running");
-                }
+                    throw new InvalidOperationException("PowerPoint가 실행 중이지 않습니다.");
 
+                // 2) 포그라운드(활성) PowerPoint 프로세스 찾기
                 Process? activePPTProcess = null;
-                foreach (var process in pptProcesses)
+                foreach (var proc in pptProcesses)
                 {
-                    if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowTitle.Length > 0)
+                    if (proc.MainWindowHandle != IntPtr.Zero &&
+                        !string.IsNullOrEmpty(proc.MainWindowTitle) &&
+                        proc.MainWindowHandle == GetForegroundWindow())
                     {
-                        Console.WriteLine($"PowerPoint 프로세스 정보:");
-                        Console.WriteLine($"- 프로세스 ID: {process.Id}");
-                        Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
-                        Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
-                        
-                        if (process.MainWindowHandle == GetForegroundWindow())
+                        activePPTProcess = proc;
+                        break;
+                    }
+                }
+                if (activePPTProcess == null)
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+
+                // 3) COM으로 PowerPoint.Application 객체 가져오기
+                _pptApp = (PPTApp)GetActiveObject("PowerPoint.Application");
+                _presentation = _pptApp.ActivePresentation;
+                if (_presentation == null)
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+
+                Console.WriteLine($"- 프레젠테이션: {_presentation.Name}");
+                Console.WriteLine($"- 경로: {_presentation.FullName}");
+                Console.WriteLine($"- 저장 여부: {(_presentation.Saved == MsoTriState.msoTrue ? "저장됨" : "저장되지 않음")}");
+
+                // 4) 현재 Selection 가져오기
+                var selection = _pptApp.ActiveWindow.Selection;
+                if (selection == null)
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+
+                Console.WriteLine($"Selection.Type = {selection.Type}");
+
+                // 5) 클립보드 초기화
+                Clipboard.Clear();
+
+                // 6) 선택된 항목에 따라 Copy 호출
+                if (selection.Type == PpSelectionType.ppSelectionShapes)
+                {
+                    // 도형 선택 시 selection.Copy()로 GVML 패키지를 클립보드에 올려줌
+                    try
+                    {
+                        selection.Copy();
+                    }
+                    catch (COMException)
+                    {
+                        // 만약 실패하면, ShapeRange.Copy()로 재시도
+                        try { selection.ShapeRange.Copy(); }
+                        catch (COMException ex)
                         {
-                            activePPTProcess = process;
-                            Console.WriteLine("이 PowerPoint 창이 현재 활성화되어 있습니다.");
+                            Console.WriteLine($"도형 복사 실패: {ex.Message}");
                         }
                     }
                 }
-
-                if (activePPTProcess == null)
+                else if (selection.Type == PpSelectionType.ppSelectionText)
                 {
-                    Console.WriteLine("활성화된 PowerPoint 창을 찾을 수 없습니다.");
-                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    // 텍스트 선택 시, HTML Fragment를 클립보드에 올려줌
+                    try { selection.Copy(); }
+                    catch (COMException ex)
+                    {
+                        Console.WriteLine($"텍스트 복사 중 오류: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    // 도형/텍스트 외 항목인 경우에도 일단 Copy() 시도
+                    try { selection.Copy(); }
+                    catch (COMException ex)
+                    {
+                        Console.WriteLine($"Copy() 호출 중 예외: {ex.Message}");
+                    }
                 }
 
-                try
+                // 7) 클립보드 갱신 대기
+                Thread.Sleep(200);
+
+                // 8) 클립보드 데이터 가져오기
+                IDataObject dataObj = Clipboard.GetDataObject()!;
+                if (dataObj == null)
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+
+                // 9) 텍스트(HTML Fragment) 우선 처리
+                if (Clipboard.ContainsText(TextDataFormat.Html))
                 {
-                    Console.WriteLine("PowerPoint COM 객체 가져오기 시도...");
-                    _pptApp = (Application)GetActiveObject("PowerPoint.Application");
-                    Console.WriteLine("PowerPoint COM 객체 가져오기 성공");
+                    string htmlRaw = Clipboard.GetText(TextDataFormat.Html)!;
+                    return ProcessHtmlFragment(htmlRaw);
+                }
 
-                    Console.WriteLine("활성 프레젠테이션 가져오기 시도...");
-                    _presentation = _pptApp.ActivePresentation;
-                    
-                    if (_presentation == null)
+                // 10) GVML 패키지(Zip) 처리: "Art::GVML ClipFormat" 포맷이 있는지 확인
+                string? gvmlKey = dataObj.GetFormats()
+                    .FirstOrDefault(f => f.Equals("Art::GVML ClipFormat", StringComparison.OrdinalIgnoreCase));
+
+                if (gvmlKey != null)
+                {
+                    Console.WriteLine($"GVML 패키지 포맷 발견: \"{gvmlKey}\"");
+                    object rawData = dataObj.GetData(gvmlKey)!;
+
+                    // byte[] 또는 MemoryStream 형태로 올 수 있음
+                    byte[] zipBytes;
+                    if (rawData is byte[] ba)
                     {
-                        Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                        zipBytes = ba;
                     }
-                    
-                    Console.WriteLine($"활성 프레젠테이션 정보:");
-                    Console.WriteLine($"- 프레젠테이션 이름: {_presentation.Name}");
-                    Console.WriteLine($"- 전체 경로: {_presentation.FullName}");
-                    Console.WriteLine($"- 저장 여부: {(_presentation.Saved == MsoTriState.msoTrue ? "저장됨" : "저장되지 않음")}");
-                    Console.WriteLine($"- 읽기 전용: {(_presentation.ReadOnly == MsoTriState.msoTrue ? "예" : "아니오")}");
-
-                    _slide = _pptApp.ActiveWindow?.View?.Slide;
-                    if (_slide == null)
+                    else if (rawData is MemoryStream ms)
                     {
-                        Console.WriteLine("활성 슬라이드를 찾을 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                    }
-
-                    Microsoft.Office.Interop.PowerPoint.ShapeRange? shapes;
-                    if (readAllContent)
-                    {
-                        shapes = _slide.Shapes.Range();
+                        zipBytes = ms.ToArray();
                     }
                     else
                     {
-                        shapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
-                    }
-
-                    if (shapes == null)
-                    {
-                        Console.WriteLine("선택된 텍스트가 없습니다.");
+                        Console.WriteLine($"예상치 못한 GVML 데이터 타입: {rawData.GetType().Name}");
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
-                    var styledTextBuilder = new StringBuilder();
-                    var styleAttributes = new Dictionary<string, object>();
-
-                    foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in shapes)
-                    {
-                        string shapeHtml = ConvertShapeToHtml(shape);
-                        styledTextBuilder.Append(shapeHtml);
-                    }
-
-                    string selectedText = styledTextBuilder.ToString();
-                    string lineNumber = $"Slide {_slide.SlideIndex}";
-
-                    return (selectedText, styleAttributes, lineNumber);
+                    return ProcessGvmlZip(zipBytes);
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"PowerPoint COM 연결 오류: {ex.Message}");
-                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                }
+
+                // 11) 위 두 포맷이 모두 없으면 빈 문자열 반환
+                Console.WriteLine("HTML/ GVML 관련 클립보드 포맷을 찾지 못했습니다.");
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+            }
+            catch (COMException comEx)
+            {
+                Console.WriteLine($"PowerPoint COM 오류: {comEx.Message}");
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PowerPoint 데이터 읽기 오류 발생: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
-                LogWindow.Instance.Log($"PowerPoint 데이터 읽기 오류: {ex.Message}");
+                Console.WriteLine($"오류 발생: {ex.Message}");
                 return (string.Empty, new Dictionary<string, object>(), string.Empty);
             }
             finally
             {
-                if (_slide != null) Marshal.ReleaseComObject(_slide);
-                if (_presentation != null) Marshal.ReleaseComObject(_presentation);
-                if (_pptApp != null) Marshal.ReleaseComObject(_pptApp);
+                if (_presentation != null)
+                    Marshal.ReleaseComObject(_presentation);
+                if (_pptApp != null)
+                    Marshal.ReleaseComObject(_pptApp);
             }
+        }
+
+        /// <summary>
+        /// HTML Fragment(rawHtml)에서 <!--StartFragment-->와 <!--EndFragment--> 사이만 추출하여
+        /// test.html로 저장하고 fragment만 반환합니다.
+        /// </summary>
+        private (string, Dictionary<string, object>, string) ProcessHtmlFragment(string rawHtml)
+        {
+            int startIdx = rawHtml.IndexOf("<!--StartFragment-->");
+            int endIdx = rawHtml.IndexOf("<!--EndFragment-->");
+            if (startIdx != -1 && endIdx != -1 && endIdx > startIdx)
+            {
+                int fragContentStart = startIdx + "<!--StartFragment-->".Length;
+                int fragLength = endIdx - fragContentStart;
+                string fragment = rawHtml.Substring(fragContentStart, fragLength);
+
+                Console.WriteLine("=== 추출된 HTML Fragment (일부) ===");
+                Console.WriteLine(fragment.Substring(0, Math.Min(fragment.Length, 500)));
+                if (fragment.Length > 500) Console.WriteLine("... (생략) ...");
+                Console.WriteLine("=== 끝 ===");
+
+                try
+                {
+                    string htmlTemplate = @"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>Clipboard HTML Fragment (길이: {1}자)</title>
+</head>
+<body>
+{0}
+</body>
+</html>";
+                    string fullHtml = string.Format(htmlTemplate, fragment, fragment.Length);
+                    File.WriteAllText("test.html", fullHtml, System.Text.Encoding.UTF8);
+                    Console.WriteLine("▶ test.html 파일 저장 완료");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"test.html 저장 오류: {ex.Message}");
+                }
+
+                return (fragment, new Dictionary<string, object>(), string.Empty);
+            }
+            else
+            {
+                Console.WriteLine("HTML Fragment 마커를 찾을 수 없습니다. 전체 HTML을 test_full.html로 저장합니다.");
+                try
+                {
+                    File.WriteAllText("test_full.html", rawHtml, System.Text.Encoding.UTF8);
+                    Console.WriteLine("▶ test_full.html 파일 저장 완료");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"test_full.html 저장 오류: {ex.Message}");
+                }
+
+                return (rawHtml, new Dictionary<string, object>(), string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// GVML 패키지(zipBytes)에서 "clipboard/drawings/drawing1.xml"만 추출하여
+        /// test_drawing1.xml로 저장하고, 그 내용 문자열만 반환합니다.
+        /// </summary>
+        private (string, Dictionary<string, object>, string) ProcessGvmlZip(byte[] zipBytes)
+        {
+            try
+            {
+                using var mem = new MemoryStream(zipBytes);
+                using var archive = new ZipArchive(mem, ZipArchiveMode.Read, leaveOpen: true);
+
+                // "clipboard/drawings/drawing1.xml" 경로를 가진 엔트리를 찾음
+                // (실제 ZIP 내부 구조에 따라 경로가 달라질 수 있음)
+                var entry = archive.GetEntry("clipboard/drawings/drawing1.xml")
+                         ?? archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("drawing1.xml", StringComparison.OrdinalIgnoreCase));
+
+                if (entry == null)
+                {
+                    Console.WriteLine("ZIP 내부에서 drawing1.xml 엔트리를 찾을 수 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+
+                // 해당 엔트리의 내용을 문자열로 읽어들임
+                string xmlContent;
+                using (var reader = new StreamReader(entry.Open(), System.Text.Encoding.UTF8))
+                {
+                    xmlContent = reader.ReadToEnd();
+                }
+
+                Console.WriteLine("=== 추출된 drawing1.xml 내용 (일부) ===");
+                Console.WriteLine(xmlContent.Substring(0, Math.Min(xmlContent.Length, 500)));
+                if (xmlContent.Length > 500) Console.WriteLine("... (생략) ...");
+                Console.WriteLine("=== 끝 ===");
+
+                // 파일로 저장
+                try
+                {
+                    File.WriteAllText("test_drawing1.xml", xmlContent, System.Text.Encoding.UTF8);
+                    Console.WriteLine("▶ test_drawing1.xml 파일 저장 완료");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"test_drawing1.xml 저장 오류: {ex.Message}");
+                }
+
+                // 최종 반환값: XML 문자열
+                return (xmlContent, new Dictionary<string, object>(), string.Empty);
+            }
+            catch (InvalidDataException)
+            {
+                Console.WriteLine("GVML 패키지를 ZIP으로 열 수 없습니다. (잘못된 형식)");
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"GVML ZIP 처리 중 오류: {ex.Message}");
+                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+            }
+        }
+
+        // 이하 기존 헬퍼 메서드는 그대로 두거나 필요에 따라 유지하세요.
+        private string CleanAndNormalizeHtml(string rawFragment)
+        {
+            var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+            htmlDoc.LoadHtml("<div id=\"wrapper\">" + rawFragment + "</div>");
+            HtmlNode wrapper = htmlDoc.GetElementbyId("wrapper")!;
+
+            RemoveUnwantedNodes(wrapper);
+            RemoveWordSpecificAttributes(wrapper);
+            RemoveClassAttributes(wrapper);
+            RemoveEmptySpans(wrapper);
+            MergeAdjacentSpans(wrapper);
+            RemoveEmptyStyleAttributes(wrapper);
+            ProcessImages(wrapper);
+
+            string interimHtml = wrapper.InnerHtml;
+            return NormalizeWhitespace(interimHtml);
+        }
+
+        private void RemoveUnwantedNodes(HtmlNode root)
+        {
+            var metas = root.SelectNodes("//meta");
+            if (metas != null) foreach (var meta in metas) meta.Remove();
+
+            var xmlNodes = root.SelectNodes("//xml");
+            if (xmlNodes != null) foreach (var node in xmlNodes) node.Remove();
+
+            var allNodes = root.SelectNodes("//*");
+            if (allNodes != null)
+            {
+                foreach (var node in allNodes.ToList())
+                {
+                    if (node.Name.StartsWith("o:", StringComparison.OrdinalIgnoreCase)
+                        || node.Name.StartsWith("w:", StringComparison.OrdinalIgnoreCase)
+                        || node.Name.StartsWith("v:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        node.Remove();
+                    }
+                }
+            }
+
+            var comments = root.SelectNodes("//comment()");
+            if (comments != null) foreach (var c in comments.Cast<HtmlCommentNode>()) c.Remove();
+        }
+
+        private void RemoveWordSpecificAttributes(HtmlNode root)
+        {
+            var nodesWithLang = root.SelectNodes("//*[@lang]");
+            if (nodesWithLang != null) foreach (var node in nodesWithLang) node.Attributes.Remove("lang");
+
+            var nodesWithStyle = root.SelectNodes("//*[@style]");
+            if (nodesWithStyle != null)
+            {
+                foreach (var node in nodesWithStyle.ToList())
+                {
+                    var styleAttr = node.GetAttributeValue("style", "").Trim();
+                    if (string.IsNullOrEmpty(styleAttr))
+                    {
+                        node.Attributes.Remove("style");
+                        continue;
+                    }
+
+                    var declarations = styleAttr
+                        .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(d => d.Trim())
+                        .Where(d => !d.StartsWith("mso-", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (declarations.Any())
+                        node.SetAttributeValue("style", string.Join(";", declarations) + ";");
+                    else
+                        node.Attributes.Remove("style");
+                }
+            }
+        }
+
+        private void RemoveClassAttributes(HtmlNode root)
+        {
+            var nodesWithClass = root.SelectNodes("//*[@class]");
+            if (nodesWithClass != null) foreach (var node in nodesWithClass) node.Attributes.Remove("class");
+        }
+
+        private void RemoveEmptySpans(HtmlNode root)
+        {
+            var spans = root.SelectNodes("//span");
+            if (spans != null)
+            {
+                foreach (var span in spans.ToList())
+                {
+                    string styleAttr = span.GetAttributeValue("style", "").Trim();
+                    string inner = span.InnerHtml.Trim();
+                    if (string.IsNullOrEmpty(styleAttr) && string.IsNullOrEmpty(inner))
+                        span.Remove();
+                }
+            }
+        }
+
+        private void MergeAdjacentSpans(HtmlNode root)
+        {
+            var parentNodes = root.SelectNodes("//*");
+            if (parentNodes == null) return;
+
+            foreach (var parent in parentNodes)
+            {
+                var children = parent.ChildNodes.ToList();
+                for (int i = 0; i < children.Count - 1; i++)
+                {
+                    var curr = children[i];
+                    var next = children[i + 1];
+                    if (curr.Name.Equals("span", StringComparison.OrdinalIgnoreCase)
+                        && next.Name.Equals("span", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string styleCurr = curr.GetAttributeValue("style", "");
+                        string styleNext = next.GetAttributeValue("style", "");
+                        if (styleCurr == styleNext)
+                        {
+                            curr.InnerHtml += next.InnerHtml;
+                            next.Remove();
+                            children = parent.ChildNodes.ToList();
+                            i--;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void RemoveEmptyStyleAttributes(HtmlNode root)
+        {
+            var nodesWithStyle = root.SelectNodes("//*[@style]");
+            if (nodesWithStyle != null)
+            {
+                foreach (var node in nodesWithStyle.ToList())
+                {
+                    var val = node.GetAttributeValue("style", "").Trim();
+                    if (string.IsNullOrEmpty(val))
+                        node.Attributes.Remove("style");
+                }
+            }
+        }
+
+        private void ProcessImages(HtmlNode root)
+        {
+            string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+            if (!Directory.Exists(imageDir))
+                Directory.CreateDirectory(imageDir);
+
+            var images = root.SelectNodes("//img");
+            if (images != null)
+            {
+                foreach (var img in images)
+                {
+                    string src = img.GetAttributeValue("src", "");
+                    if (src.StartsWith("data:image"))
+                    {
+                        try
+                        {
+                            string[] parts = src.Split(',');
+                            if (parts.Length > 1)
+                            {
+                                string imageData = parts[1];
+                                string imageId = Guid.NewGuid().ToString();
+                                string imagePath = Path.Combine(imageDir, $"{imageId}.jpg");
+                                byte[] imageBytes = Convert.FromBase64String(imageData);
+                                File.WriteAllBytes(imagePath, imageBytes);
+                                img.SetAttributeValue("src", $"images/{imageId}.jpg");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"이미지 처리 오류: {ex.Message}");
+                        }
+                    }
+                }
+            }
+        }
+
+        private string NormalizeWhitespace(string html)
+        {
+            return string.IsNullOrEmpty(html) ? string.Empty : html.Trim();
         }
 
         public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
+            PPTApp? tempPPTApp = null;
+            Presentation? tempPresentation = null;
+
             try
             {
-                if (_presentation == null)
+                tempPPTApp = (PPTApp)GetActiveObject("PowerPoint.Application");
+                tempPresentation = tempPPTApp.ActivePresentation;
+                if (tempPresentation == null)
                     return (null, null, "PowerPoint", string.Empty, string.Empty);
 
-                string filePath = _presentation.FullName;
-                if (string.IsNullOrEmpty(filePath))
-                    return (null, null, "PowerPoint", _presentation.Name, string.Empty);
-
-                var fileIdInfo = GetFileId(filePath);
-                return (
-                    fileIdInfo?.FileId,
-                    fileIdInfo?.VolumeId,
-                    "PowerPoint",
-                    _presentation.Name,
-                    filePath
-                );
+                string filePath = tempPresentation.FullName;
+                string fileName = tempPresentation.Name;
+                return (null, null, "PowerPoint", fileName, filePath);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
                 return (null, null, "PowerPoint", string.Empty, string.Empty);
+            }
+            finally
+            {
+                if (tempPresentation != null) Marshal.ReleaseComObject(tempPresentation);
+                if (tempPPTApp != null)     Marshal.ReleaseComObject(tempPPTApp);
             }
         }
     }
