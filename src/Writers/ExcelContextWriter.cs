@@ -1,18 +1,17 @@
 using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
+using System.IO;
+using System.Text;
+using System.Windows.Forms;
 using Microsoft.Office.Interop.Excel;
-using System.Diagnostics;
-using HtmlAgilityPack;
+using System.Runtime.InteropServices;
 using Range = Microsoft.Office.Interop.Excel.Range;
 
 namespace overlay_gpt
 {
-    public class ExcelContextWriter : IContextWriter
+    public class ExcelContextWriter : IContextWriter, IDisposable
     {
-        private Application? _excelApp;
+        private Microsoft.Office.Interop.Excel.Application? _excelApp;
         private Workbook? _workbook;
-        private Worksheet? _worksheet;
 
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
@@ -29,375 +28,204 @@ namespace overlay_gpt
             return obj;
         }
 
+        /// <summary>
+        /// Excel 파일을 열어서 _excelApp, _workbook에 설정합니다.
+        /// </summary>
         public bool OpenFile(string filePath)
         {
             try
             {
-                Console.WriteLine("기존 Excel 프로세스 확인 중...");
-                try
+                if (!File.Exists(filePath))
                 {
-                    _excelApp = (Application)GetActiveObject("Excel.Application");
-                    Console.WriteLine("기존 Excel 프로세스 발견");
-
-                    // 이미 열려있는 문서 확인
-                    foreach (Workbook wb in _excelApp.Workbooks)
-                    {
-                        try
-                        {
-                            if (wb.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                Console.WriteLine("파일이 이미 열려있습니다.");
-                                _workbook = wb;
-                                _worksheet = _excelApp.ActiveSheet as Worksheet;
-                                return true;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"워크북 확인 중 오류 발생: {ex.Message}");
-                            continue;
-                        }
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("새로운 Excel COM 객체 생성 시도...");
-                    _excelApp = new Application();
-                    _excelApp.Visible = false; // 백그라운드에서 실행
-                    Console.WriteLine("새로운 Excel COM 객체 생성 성공");
+                    Console.WriteLine($"파일이 존재하지 않습니다: {filePath}");
+                    return false;
                 }
 
-                Console.WriteLine($"파일 열기 시도: {filePath}");
+                _excelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
                 _workbook = _excelApp.Workbooks.Open(filePath);
-                _worksheet = _excelApp.ActiveSheet as Worksheet;
-                Console.WriteLine("파일 열기 성공");
-
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Excel 파일 열기 오류 발생: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
-                
-                // 오류 발생 시 COM 객체 정리
-                if (_worksheet != null)
-                {
-                    try { Marshal.ReleaseComObject(_worksheet); } catch { }
-                    _worksheet = null;
-                }
-                if (_workbook != null)
-                {
-                    try { Marshal.ReleaseComObject(_workbook); } catch { }
-                    _workbook = null;
-                }
-                if (_excelApp != null)
-                {
-                    try { Marshal.ReleaseComObject(_excelApp); } catch { }
-                    _excelApp = null;
-                }
-                
+                Console.WriteLine($"파일 열기 오류: {ex.Message}");
                 return false;
             }
         }
 
-        public bool ApplyTextWithStyle(string text, string lineNumber)
+        /// <summary>
+        /// HTML 텍스트(테이블 태그 포함)를 받아서 임시 HTML 파일로 저장한 뒤,
+        /// 해당 파일을 워크북으로 열어 복사 → Range.Copy(Destination) 방식으로
+        /// 원본 시트에 삽입합니다.
+        /// </summary>
+        /// <param name="htmlText">
+        /// “<table>…</table>” 단편 형태의 HTML이라 가정합니다.
+        /// </param>
+        /// <param name="lineNumber">
+        /// 붙여넣기를 원하는 Excel 범위(예: "$A$1:$C$5" 등).
+        /// </param>
+        public bool ApplyTextWithStyle(string htmlText, string lineNumber)
         {
+            if (_excelApp == null || _workbook == null)
+            {
+                Console.WriteLine("Excel 애플리케이션 또는 워크북이 초기화되지 않았습니다.");
+                return false;
+            }
+
             try
             {
-                if (_excelApp == null || _worksheet == null)
-                {
-                    Console.WriteLine("Excel 애플리케이션이 초기화되지 않았습니다.");
-                    return false;
-                }
+                Console.WriteLine("\n=== Excel 데이터 적용(수정된 방식: Copy(Destination)) 시작 ===");
+                Console.WriteLine($"위치: {lineNumber}");
+                Console.WriteLine($"입력 HTML 단편 길이: {htmlText.Length}자");
+                Console.WriteLine($"입력 HTML 단편 (처음 100자): {htmlText.Substring(0, Math.Min(100, htmlText.Length))}");
 
-                Console.WriteLine($"텍스트 적용 시작 - 라인 번호: {lineNumber}");
-                Console.WriteLine($"적용할 텍스트: {text}");
+                // 1) HTML 단편(fragment)을 완전한 HTML 문서로 감싼다.
+                string fullHtml = $@"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <style>
+        table {{ border-collapse: collapse; }}
+        td {{ padding: 2px; font-family: Arial, sans-serif; font-size: 11pt; }}
+    </style>
+</head>
+<body>
+    {htmlText}
+</body>
+</html>";
 
-                // 라인 번호 파싱 (예: "R1C1-R2C2")
-                var lineNumbers = lineNumber.Split('-');
-                if (lineNumbers.Length != 2)
-                {
-                    Console.WriteLine("잘못된 라인 번호 형식입니다.");
-                    return false;
-                }
+                Console.WriteLine($"전체 HTML 길이: {fullHtml.Length}자");
 
-                // 시작 셀과 끝 셀의 행/열 번호 추출
-                var startCell = lineNumbers[0].Substring(1).Split('C');
-                var endCell = lineNumbers[1].Substring(1).Split('C');
+                // 2) 임시 파일 경로를 얻고, UTF-8로 저장
+                string tempFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".html");
+                File.WriteAllText(tempFile, fullHtml, Encoding.UTF8);
+                File.SetAttributes(tempFile, FileAttributes.Hidden);
+                Console.WriteLine($"임시 HTML 파일 생성: {tempFile}");
 
-                int startRow = int.Parse(startCell[0]);
-                int startCol = int.Parse(startCell[1]);
-                int endRow = int.Parse(endCell[0]);
-                int endCol = int.Parse(endCell[1]);
-
-                Console.WriteLine($"시작 셀: R{startRow}C{startCol}, 종료 셀: R{endRow}C{endCol}");
-
-                // 선택된 범위 설정
-                Range selectedRange = null;
+                // 3) 임시 HTML 파일을 Excel 워크북으로 연다.
+                Workbook tempWb;
+                Worksheet tempSheet;
                 try
                 {
-                    Console.WriteLine("셀 범위 설정 시도...");
-                    selectedRange = _worksheet.Range[
-                        _worksheet.Cells[startRow, startCol],
-                        _worksheet.Cells[endRow, endCol]
-                    ];
-                    Console.WriteLine("셀 범위 설정 성공");
-
-                    // 선택된 범위의 내용과 스타일 모두 지우기
-                    Console.WriteLine("선택된 범위의 내용과 스타일 지우기...");
-                    selectedRange.Clear();
-                    Console.WriteLine("선택된 범위 초기화 완료");
+                    tempWb = _excelApp.Workbooks.Open(
+                        tempFile,
+                        ReadOnly: true,
+                        Editable: false,
+                        Local: true
+                    );
+                    tempSheet = (Worksheet)tempWb.ActiveSheet;
+                    Console.WriteLine($"임시 워크북 열기 성공: 시트 이름 = {tempSheet.Name}");
                 }
-                catch (Exception ex)
+                catch (Exception openTempEx)
                 {
-                    Console.WriteLine($"셀 범위 설정 중 오류 발생: {ex.Message}");
+                    Console.WriteLine($"임시 HTML 워크북 열기 실패: {openTempEx.Message}");
+                    if (File.Exists(tempFile))
+                        File.Delete(tempFile);
                     return false;
                 }
 
-                if (selectedRange == null)
+                // 4) 임시 시트의 UsedRange 전체를 가져와서, Destination으로 Copy
+                Range copyRange = tempSheet.UsedRange;
+                Console.WriteLine($"임시 시트 UsedRange: {copyRange.Address}");
+
+                // 5) 원본 워크북의 대상 시트를 가져오고, 대상 범위를 Clear
+                Worksheet origSheet = (Worksheet)_workbook.ActiveSheet;
+                origSheet.Activate();
+
+                Range targetRange = origSheet.Range[lineNumber];
+                if (targetRange == null)
                 {
-                    Console.WriteLine("셀 범위를 설정할 수 없습니다.");
+                    Console.WriteLine($"원본 워크북의 대상 범위({lineNumber})를 찾을 수 없습니다.");
+                    tempWb.Close(false);
+                    if (File.Exists(tempFile))
+                        File.Delete(tempFile);
                     return false;
                 }
 
-                // HTML 태그 처리
-                Console.WriteLine("HTML 파싱 시작...");
-                var htmlDoc = new HtmlAgilityPack.HtmlDocument();
-                htmlDoc.LoadHtml(text);
-                Console.WriteLine($"HTML 노드 수: {htmlDoc.DocumentNode.ChildNodes.Count}");
+                // (Optional) 원본 범위 초기화: 값만 지우고 서식은 남기는 경우라면 ClearContents(),
+                // 서식까지 지우려면 Clear() 사용.
+                Console.WriteLine($"원본 워크북의 대상 범위: {targetRange.Address}");
+                targetRange.Clear();
+                Console.WriteLine("원본 범위 내용 및 서식 지움 완료.");
 
-                // 테이블 구조 파싱
-                var tableNode = htmlDoc.DocumentNode.SelectSingleNode("//table");
-                if (tableNode != null)
+                // 6) copyRange를 targetRange를 시작점으로 삼아서 붙여넣기
+                //    이때 copyRange.Copy(Destination) 메서드를 사용하면 클립보드 불필요
+                Range destinationCell = origSheet.Range[lineNumber].Cells[1, 1];
+                // copyRange 크기가 예: A1:C5라면, Destination 셀부터 A1상의 위치에 동일 크기로 복사된다.
+                copyRange.Copy(destinationCell);
+                Console.WriteLine($"copyRange.Copy(dest) 호출 완료: dest = {destinationCell.Address}");
+
+                // 7) 임시 워크북 닫고, COM 개체 해제 및 파일 삭제
+                tempWb.Close(false);
+                Marshal.ReleaseComObject(tempSheet);
+                Marshal.ReleaseComObject(tempWb);
+                if (File.Exists(tempFile))
                 {
-                    var rows = tableNode.SelectNodes(".//tr");
-                    if (rows != null)
-                    {
-                        for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-                        {
-                            var cells = rows[rowIndex].SelectNodes(".//td");
-                            if (cells != null)
-                            {
-                                for (int colIndex = 0; colIndex < cells.Count; colIndex++)
-                                {
-                                    var cell = cells[colIndex];
-                                    var cellRange = _worksheet.Range[
-                                        _worksheet.Cells[startRow + rowIndex, startCol + colIndex],
-                                        _worksheet.Cells[startRow + rowIndex, startCol + colIndex]
-                                    ];
-
-                                    try
-                                    {
-                                        Console.WriteLine($"셀 처리 시작 - 행: {rowIndex + 1}, 열: {colIndex + 1}");
-                                        
-                                        // 텍스트 적용
-                                        cellRange.Value2 = cell.InnerText.Trim();
-                                        
-                                        // 스타일 적용
-                                        var style = cell.GetAttributeValue("style", "");
-                                        Console.WriteLine($"셀 스타일: {style}");
-                                        
-                                        var styleAttributes = style.Split(';')
-                                            .Select(s => s.Trim().Split(':'))
-                                            .Where(p => p.Length == 2)
-                                            .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
-
-                                        // 폰트 설정
-                                        var font = cellRange.Font;
-
-                                        // 배경색
-                                        if (styleAttributes.TryGetValue("background-color", out var bgColor))
-                                        {
-                                            if (bgColor.StartsWith("#"))
-                                            {
-                                                Console.WriteLine($"배경색 설정: {bgColor}");
-                                                var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                                // BGR로 변환 (Excel은 BGR 형식 사용)
-                                                int b = (rgb >> 16) & 0xFF;
-                                                int g = (rgb >> 8) & 0xFF;
-                                                int r = rgb & 0xFF;
-                                                int bgr = (r << 16) | (g << 8) | b;
-                                                cellRange.Interior.Color = bgr;
-                                            }
-                                        }
-
-                                        // 텍스트 색상
-                                        if (styleAttributes.TryGetValue("color", out var color))
-                                        {
-                                            if (color.StartsWith("#"))
-                                            {
-                                                Console.WriteLine($"텍스트 색상 설정: {color}");
-                                                var rgb = int.Parse(color.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                                // BGR로 변환 (Excel은 BGR 형식 사용)
-                                                int b = (rgb >> 16) & 0xFF;
-                                                int g = (rgb >> 8) & 0xFF;
-                                                int r = rgb & 0xFF;
-                                                int bgr = (r << 16) | (g << 8) | b;
-                                                font.Color = bgr;
-                                            }
-                                        }
-
-                                        // 폰트 패밀리
-                                        if (styleAttributes.TryGetValue("font-family", out var fontFamily))
-                                        {
-                                            Console.WriteLine($"폰트 패밀리 설정: {fontFamily}");
-                                            font.Name = fontFamily.Trim('\'');
-                                        }
-
-                                        // 폰트 크기
-                                        if (styleAttributes.TryGetValue("font-size", out var fontSize))
-                                        {
-                                            if (fontSize.EndsWith("pt"))
-                                            {
-                                                Console.WriteLine($"폰트 크기 설정: {fontSize}");
-                                                font.Size = float.Parse(fontSize.Replace("pt", ""));
-                                            }
-                                        }
-
-                                        // 굵게
-                                        if (styleAttributes.TryGetValue("font-weight", out var fontWeight) && fontWeight == "bold")
-                                        {
-                                            Console.WriteLine("굵게 스타일 적용");
-                                            font.Bold = -1;
-                                        }
-
-                                        // 테두리
-                                        var borderPositions = new Dictionary<string, (string style, XlBordersIndex index)>
-                                        {
-                                            { "border-top", (styleAttributes.TryGetValue("border-top", out var top) ? top.ToString() : "", XlBordersIndex.xlEdgeTop) },
-                                            { "border-right", (styleAttributes.TryGetValue("border-right", out var right) ? right.ToString() : "", XlBordersIndex.xlEdgeRight) },
-                                            { "border-bottom", (styleAttributes.TryGetValue("border-bottom", out var bottom) ? bottom.ToString() : "", XlBordersIndex.xlEdgeBottom) },
-                                            { "border-left", (styleAttributes.TryGetValue("border-left", out var left) ? left.ToString() : "", XlBordersIndex.xlEdgeLeft) }
-                                        };
-
-                                        foreach (var position in borderPositions)
-                                        {
-                                            if (!string.IsNullOrEmpty(position.Value.style) && position.Value.style.Contains("solid"))
-                                            {
-                                                Console.WriteLine($"{position.Key} 스타일 적용");
-                                                var border = cellRange.Borders[position.Value.index];
-                                                border.LineStyle = XlLineStyle.xlContinuous;
-                                                
-                                                // 테두리 두께 설정
-                                                if (position.Value.style.Contains("2px"))
-                                                {
-                                                    border.Weight = XlBorderWeight.xlMedium;
-                                                }
-                                                else if (position.Value.style.Contains("3px"))
-                                                {
-                                                    border.Weight = XlBorderWeight.xlThick;
-                                                }
-                                                else
-                                                {
-                                                    border.Weight = XlBorderWeight.xlThin;
-                                                }
-                                                
-                                                border.Color = 0; // 검은색
-                                            }
-                                        }
-
-                                        Console.WriteLine($"셀 처리 완료 - 행: {rowIndex + 1}, 열: {colIndex + 1}");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"셀 처리 중 오류 발생: {ex.Message}");
-                                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
-                                    }
-                                    finally
-                                    {
-                                        if (cellRange != null)
-                                        {
-                                            try { Marshal.ReleaseComObject(cellRange); } catch { }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("테이블 구조를 찾을 수 없습니다.");
+                    File.Delete(tempFile);
+                    Console.WriteLine("임시 HTML 파일 삭제 완료.");
                 }
 
-                Console.WriteLine("텍스트 적용 완료");
+                Console.WriteLine("=== Excel 데이터 적용(수정된 방식: Copy(Destination)) 완료 ===\n");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"텍스트 적용 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"Excel 데이터 적용 오류: {ex.Message}");
                 Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"내부 예외: {ex.InnerException.Message}");
+                    Console.WriteLine($"내부 예외 스택 트레이스: {ex.InnerException.StackTrace}");
+                }
                 return false;
             }
         }
 
+        /// <summary>
+        /// 현재 열려 있는 워크북의 파일 정보를 반환합니다.
+        /// </summary>
         public (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
-            Application? tempExcelApp = null;
-            Workbook? tempWorkbook = null;
-            
             try
             {
-                Console.WriteLine("Excel COM 객체 가져오기 시도...");
-                tempExcelApp = (Application)GetActiveObject("Excel.Application");
-                Console.WriteLine("Excel COM 객체 가져오기 성공");
-
-                Console.WriteLine("활성 워크북 가져오기 시도...");
-                tempWorkbook = tempExcelApp.ActiveWorkbook;
-                
-                if (tempWorkbook == null)
-                {
-                    Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
+                if (_workbook == null)
                     return (null, null, "Excel", string.Empty, string.Empty);
-                }
 
-                string filePath = tempWorkbook.FullName;
-                string fileName = tempWorkbook.Name;
-                
-                Console.WriteLine($"Excel 워크북 정보:");
-                Console.WriteLine($"- 파일 경로: {filePath}");
-                Console.WriteLine($"- 파일 이름: {fileName}");
-                
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    Console.WriteLine("파일 경로가 비어있습니다.");
-                    return (null, null, "Excel", fileName, string.Empty);
-                }
-                
+                string filePath = _workbook.FullName;
+                string fileName = _workbook.Name;
                 return (null, null, "Excel", fileName, filePath);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                Console.WriteLine($"Excel 파일 정보 가져오기 오류: {ex.Message}");
                 return (null, null, "Excel", string.Empty, string.Empty);
-            }
-            finally
-            {
-                if (tempWorkbook != null) Marshal.ReleaseComObject(tempWorkbook);
-                if (tempExcelApp != null) Marshal.ReleaseComObject(tempExcelApp);
             }
         }
 
+        /// <summary>
+        /// 리소스를 해제합니다. 반드시 사용 후 호출해야 합니다.
+        /// </summary>
         public void Dispose()
         {
-            if (_worksheet != null)
+            try
             {
-                try { Marshal.ReleaseComObject(_worksheet); } catch { }
-                _worksheet = null;
+                if (_workbook != null)
+                {
+                    _workbook.Close(false);
+                    Marshal.ReleaseComObject(_workbook);
+                    _workbook = null;
+                }
+
+                if (_excelApp != null)
+                {
+                    _excelApp.Quit();
+                    Marshal.ReleaseComObject(_excelApp);
+                    _excelApp = null;
+                }
             }
-            if (_workbook != null)
+            catch
             {
-                try { Marshal.ReleaseComObject(_workbook); } catch { }
-                _workbook = null;
+                // COM 해제 중 예외 발생 시 무시
             }
-            if (_excelApp != null)
-            {
-                try { Marshal.ReleaseComObject(_excelApp); } catch { }
-                _excelApp = null;
-            }
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
         }
     }
 }

@@ -81,6 +81,11 @@ namespace overlay_gpt
                 {
                     string htmlContent = Clipboard.GetText(TextDataFormat.Html);
                     
+                    // 원본 HTML 데이터 출력
+                    Console.WriteLine("\n=== 원본 HTML 데이터 ===");
+                    Console.WriteLine(htmlContent);
+                    Console.WriteLine("========================\n");
+                    
                     // 스타일 추출
                     var styleAttributes = new Dictionary<string, object>();
                     var styles = ExtractStylesFromHtml(htmlContent);
