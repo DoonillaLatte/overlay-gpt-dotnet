@@ -16,7 +16,7 @@ namespace overlay_gpt
             builder.AddConsole();
         });
 
-        public static IContextReader CreateReader(AutomationElement element)
+        public static IContextReader CreateReader(AutomationElement element, bool isTargetProg = false, string filePath = "")
         {
             if (element == null)
             {
@@ -47,7 +47,7 @@ namespace overlay_gpt
             try
             {   
                 Console.WriteLine("WordContextReader 생성 시도");
-                var wordReader = new WordContextReader();
+                var wordReader = new WordContextReader(isTargetProg, filePath);
                 var (text, _, _) = wordReader.GetSelectedTextWithStyle();
                 if (!string.IsNullOrEmpty(text))
                 {
@@ -65,7 +65,7 @@ namespace overlay_gpt
             try
             {   
                 Console.WriteLine("ExcelContextReader 생성 시도");
-                var excelReader = new ExcelContextReader();
+                var excelReader = new ExcelContextReader(isTargetProg, filePath);
                 var (text, _, _) = excelReader.GetSelectedTextWithStyle();
                 if (!string.IsNullOrEmpty(text))
                 {

@@ -5,6 +5,7 @@ using Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Office.Core;
 using System.Diagnostics;
 using HtmlAgilityPack;
+using System.IO;
 
 namespace overlay_gpt
 {
@@ -13,6 +14,18 @@ namespace overlay_gpt
         private Application? _pptApp;
         private Presentation? _presentation;
         private Slide? _slide;
+        private bool _isTargetProg;
+
+        public bool IsTargetProg
+        {
+            get => _isTargetProg;
+            set => _isTargetProg = value;
+        }
+
+        public PPTContextWriter(bool isTargetProg = false)
+        {
+            _isTargetProg = isTargetProg;
+        }
 
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
@@ -41,69 +54,39 @@ namespace overlay_gpt
         {
             try
             {
-                Console.WriteLine("기존 PowerPoint 프로세스 확인 중...");
+                if (!File.Exists(filePath))
+                {
+                    Console.WriteLine($"파일이 존재하지 않습니다: {filePath}");
+                    return false;
+                }
+
                 try
                 {
+                    Console.WriteLine("기존 PowerPoint 애플리케이션 찾기 시도...");
                     _pptApp = (Application)GetActiveObject("PowerPoint.Application");
-                    Console.WriteLine("기존 PowerPoint 프로세스 발견");
-
-                    // 이미 열려있는 프레젠테이션 확인
-                    foreach (Presentation pres in _pptApp.Presentations)
+                    
+                    if(_pptApp != null)
                     {
-                        try
-                        {
-                            if (pres.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                Console.WriteLine("파일이 이미 열려있습니다.");
-                                _presentation = pres;
-                                _slide = _pptApp.ActiveWindow?.View?.Slide;
-                                return true;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"프레젠테이션 확인 중 오류 발생: {ex.Message}");
-                            continue;
-                        }
+                        Console.WriteLine("기존 PowerPoint 애플리케이션 찾음");
+                        _presentation = _pptApp.Presentations.Open(filePath);
+                        _slide = _pptApp.ActiveWindow?.View?.Slide;
+                        return true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("기존 PowerPoint 애플리케이션을 찾을 수 없습니다.");
+                        return false;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Console.WriteLine("새로운 PowerPoint COM 객체 생성 시도...");
-                    _pptApp = new Application();
-                    _pptApp.Visible = MsoTriState.msoFalse; // 백그라운드에서 실행
-                    Console.WriteLine("새로운 PowerPoint COM 객체 생성 성공");
+                    Console.WriteLine($"PowerPoint 애플리케이션이 실행 중이지 않습니다: {ex.Message}");
+                    return false;
                 }
-
-                Console.WriteLine($"파일 열기 시도: {filePath}");
-                _presentation = _pptApp.Presentations.Open(filePath);
-                _slide = _pptApp.ActiveWindow?.View?.Slide;
-                Console.WriteLine("파일 열기 성공");
-
-                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PowerPoint 파일 열기 오류 발생: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
-                
-                // 오류 발생 시 COM 객체 정리
-                if (_slide != null)
-                {
-                    try { Marshal.ReleaseComObject(_slide); } catch { }
-                    _slide = null;
-                }
-                if (_presentation != null)
-                {
-                    try { Marshal.ReleaseComObject(_presentation); } catch { }
-                    _presentation = null;
-                }
-                if (_pptApp != null)
-                {
-                    try { Marshal.ReleaseComObject(_pptApp); } catch { }
-                    _pptApp = null;
-                }
-                
+                Console.WriteLine($"파일 열기 오류: {ex.Message}");
                 return false;
             }
         }

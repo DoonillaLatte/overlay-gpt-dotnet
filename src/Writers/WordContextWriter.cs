@@ -11,6 +11,18 @@ namespace overlay_gpt
     {
         private WordApp? _wordApp;
         private Document? _document;
+        private bool _isTargetProg;
+
+        public bool IsTargetProg
+        {
+            get => _isTargetProg;
+            set => _isTargetProg = value;
+        }
+
+        public WordContextWriter(bool isTargetProg = false)
+        {
+            _isTargetProg = isTargetProg;
+        }
 
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
@@ -37,9 +49,28 @@ namespace overlay_gpt
                     return false;
                 }
 
-                _wordApp = (WordApp)GetActiveObject("Word.Application");
-                _document = _wordApp.Documents.Open(filePath);
-                return true;
+                try
+                {
+                    Console.WriteLine("기존 Word 애플리케이션 찾기 시도...");
+                    _wordApp = (WordApp)GetActiveObject("Word.Application");
+                    
+                    if(_wordApp != null)
+                    {
+                        Console.WriteLine("기존 Word 애플리케이션 찾음");
+                        _document = _wordApp.Documents.Open(filePath);
+                        return true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("기존 Word 애플리케이션을 찾을 수 없습니다.");
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Word 애플리케이션이 실행 중이지 않습니다: {ex.Message}");
+                    return false;
+                }
             }
             catch (Exception ex)
             {

@@ -22,6 +22,8 @@ namespace overlay_gpt
     {
         private WordApp? _wordApp;
         private Document? _document;
+        private string? _filePath;
+        private bool _isTargetProg;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -76,6 +78,13 @@ namespace overlay_gpt
         private const uint FILE_SHARE_READ = 0x00000001;
         private const uint FILE_SHARE_WRITE = 0x00000002;
         private const uint OPEN_EXISTING = 3;
+
+        public WordContextReader(bool isTargetProg = false, string filePath = "")
+        {
+            Console.WriteLine($"WordContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            _isTargetProg = isTargetProg;
+            _filePath = filePath;
+        }
 
         private static object GetActiveObject(string progID)
         {
@@ -148,34 +157,67 @@ namespace overlay_gpt
             {
                 Console.WriteLine("Word 데이터 읽기 시작...");
 
-                var wordProcesses = Process.GetProcessesByName("WINWORD");
-                if (wordProcesses.Length == 0)
+                // Word COM 객체 생성 시도
+                try
                 {
-                    Console.WriteLine("실행 중인 Word 애플리케이션을 찾을 수 없습니다.");
-                    throw new InvalidOperationException("Word is not running");
-                }
-
-                Process? activeWordProcess = null;
-                foreach (var process in wordProcesses)
-                {
-                    if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowTitle.Length > 0)
+                    Console.WriteLine("기존 Word 애플리케이션 찾기 시도...");
+                    _wordApp = (WordApp)GetActiveObject("Word.Application");
+                    
+                    if (_wordApp != null)
                     {
-                        Console.WriteLine($"Word 프로세스 정보:");
-                        Console.WriteLine($"- 프로세스 ID: {process.Id}");
-                        Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
-                        Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
-
-                        if (process.MainWindowHandle == GetForegroundWindow())
+                        Console.WriteLine("기존 Word 애플리케이션 찾음");
+                        Console.WriteLine($"Word 버전: {_wordApp.Version}");
+                        Console.WriteLine($"활성 문서 수: {_wordApp.Documents.Count}");
+                        
+                        // 활성 문서 가져오기
+                        _document = _wordApp.ActiveDocument;
+                        if (_document == null)
                         {
-                            activeWordProcess = process;
-                            Console.WriteLine("이 Word 창이 현재 활성화되어 있습니다.");
+                            Console.WriteLine("활성 문서를 찾을 수 없습니다.");
+                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                        }
+                        Console.WriteLine($"활성 문서 이름: {_document.Name}");
+                    }
+                    else 
+                    {
+                        if (_isTargetProg)
+                        {
+                            Console.WriteLine("기존 프로세스가 없어, 새 Word 프로세스를 생성합니다.");
+                            try
+                            {
+                                _wordApp = new WordApp();
+                                Console.WriteLine("새 Word 애플리케이션 생성 성공");
+                                _wordApp.Visible = false;  // Word 창을 안보이게 설정
+
+                                Console.WriteLine($"활성 파일 경로: {_filePath}");
+
+                                if (!string.IsNullOrEmpty(_filePath))
+                                {
+                                    Console.WriteLine($"파일 열기 시도: {_filePath}");
+                                    _document = _wordApp.Documents.Open(_filePath);
+                                    Console.WriteLine("파일 열기 성공");
+                                }
+                                Console.WriteLine($"활성 문서 상태: {(_document != null ? "존재함" : "없음")}");
+                            }
+                            catch (Exception createEx)
+                            {
+                                Console.WriteLine($"새 Word 애플리케이션 생성 실패: {createEx.Message}");
+                                Console.WriteLine($"스택 트레이스: {createEx.StackTrace}");
+                                throw;
+                            }
                         }
                     }
                 }
-
-                if (activeWordProcess == null)
+                catch (Exception ex)
                 {
-                    Console.WriteLine("활성화된 Word 창을 찾을 수 없습니다.");
+                    Console.WriteLine($"기존 Word 애플리케이션 찾기 실패: {ex.Message}");
+                    Console.WriteLine("Word 애플리케이션이 실행 중이지 않습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+
+                if (_wordApp == null)
+                {
+                    Console.WriteLine("Word 애플리케이션을 생성할 수 없습니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
 
@@ -200,12 +242,54 @@ namespace overlay_gpt
                     Console.WriteLine($"- 저장 여부: {(_document.Saved ? "저장됨" : "저장되지 않음")}");
                     Console.WriteLine($"- 읽기 전용: {(_document.ReadOnly ? "예" : "아니오")}");
 
-                    // 로그 윈도우의 파일 경로와 컨텍스트 텍스트박스 업데이트
-                    LogWindow.Instance.Dispatcher.Invoke(() =>
+                    if(_isTargetProg)
                     {
-                        LogWindow.Instance.FilePathTextBox.Text = _document.FullName;
-                    });
-
+                        Console.WriteLine("전체 문서 선택");
+                        try 
+                        {
+                            // Word를 일시적으로 보이게 설정
+                            bool originalVisible = _wordApp.Visible;
+                            _wordApp.Visible = true;
+                            
+                            // 전체 문서 선택
+                            _document.Range().Select();
+                            Console.WriteLine("전체 문서 선택 완료");
+                            
+                            // 선택된 내용을 클립보드에 복사
+                            Console.WriteLine("클립보드에 복사 시도...");
+                            _wordApp.Selection.Copy();
+                            Console.WriteLine("클립보드 복사 완료");
+                            
+                            // 원래 상태로 복원
+                            _wordApp.Visible = originalVisible;
+                            
+                            // 클립보드 내용 확인
+                            Console.WriteLine("클립보드 형식 확인 중...");
+                            Console.WriteLine($"HTML 형식 존재: {Clipboard.ContainsText(TextDataFormat.Html)}");
+                            Console.WriteLine($"일반 텍스트 존재: {Clipboard.ContainsText()}");
+                            Console.WriteLine($"RTF 형식 존재: {Clipboard.ContainsText(TextDataFormat.Rtf)}");
+                            
+                            if (Clipboard.ContainsText(TextDataFormat.Html))
+                            {
+                                string htmlContent = Clipboard.GetText(TextDataFormat.Html);
+                                Console.WriteLine($"HTML 데이터 길이: {htmlContent.Length}");
+                                Console.WriteLine("HTML 데이터 일부: " + htmlContent.Substring(0, Math.Min(100, htmlContent.Length)));
+                                return (htmlContent, new Dictionary<string, object>(), "전체 문서");
+                            }
+                            else
+                            {
+                                Console.WriteLine("클립보드에 HTML 형식 데이터 없음");
+                                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"클립보드 복사 중 오류 발생: {ex.Message}");
+                            Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                        }
+                    }
+                    
                     var selection = _wordApp.Selection;
                     if (selection == null)
                     {
@@ -635,6 +719,16 @@ namespace overlay_gpt
                 {
                     Console.WriteLine("파일 경로가 비어있습니다.");
                     return (null, null, "Word", fileName, string.Empty);
+                }
+                
+                // filePath가 비어있지 않을 때 일치 여부 체크
+                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
+                {
+                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
+                        return (null, null, "Word", string.Empty, string.Empty);
+                    }
                 }
                 
                 var fileIdInfo = GetFileId(filePath);

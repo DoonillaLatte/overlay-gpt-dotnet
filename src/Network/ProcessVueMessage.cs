@@ -13,6 +13,7 @@ using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using overlay_gpt.Services;
+using System.Threading;
 
 namespace overlay_gpt.Network
 {
@@ -208,7 +209,6 @@ namespace overlay_gpt.Network
 
         private async Task HandleApplyResponse(JObject data)
         {
-            
             // 해당 ChatID를 통해 데이터 가져오기
             var chatData = ChatDataManager.Instance.GetChatDataById(data["chat_id"]?.Value<int>() ?? 0);
             if (chatData == null)
@@ -222,6 +222,7 @@ namespace overlay_gpt.Network
             Console.WriteLine($"- 대상 프로그램: {chatData.TargetProgram?.FileType} - {chatData.TargetProgram?.FileName}");
             
             ProgramInfo programToChange = null;
+            bool isTargetProg = false;
             
             // target_program이 null인지 확인
             if (chatData.TargetProgram == null)
@@ -229,12 +230,14 @@ namespace overlay_gpt.Network
                 // null이라면 current_program에 생성된 context를 적용
                 programToChange = chatData.CurrentProgram;
                 Console.WriteLine("대상 프로그램이 null이므로 현재 프로그램에 적용합니다.");
+                isTargetProg = false;
             }
             else 
             {
                 // null이 아니라면 target_program에 생성된 context를 적용
                 programToChange = chatData.TargetProgram;
                 Console.WriteLine("대상 프로그램에 적용합니다.");
+                isTargetProg = true;
             }
 
             string generatedContext = programToChange.GeneratedContext;
@@ -244,40 +247,67 @@ namespace overlay_gpt.Network
             // 해당 프로그램에 적용
             try
             {
-                var writer = ContextWriterFactory.CreateWriter(programToChange.FileType);
-                if (writer == null)
+                await Task.Run(() =>
                 {
-                    throw new Exception("지원하지 않는 프로그램입니다.");
-                }
-                Console.WriteLine($"Writer 생성 완료: {programToChange.FileType}");
+                    var thread = new Thread(() =>
+                    {
+                        try
+                        {
+                            var writer = ContextWriterFactory.CreateWriter(programToChange.FileType);
+                            
+                            if (writer == null)
+                            {
+                                throw new Exception("지원하지 않는 프로그램입니다.");
+                            }
+                            Console.WriteLine($"Writer 생성 완료: {programToChange.FileType}");
 
-                // 생성된 컨텍스트가 있는지 확인
-                if (generatedContext == null)
-                {
-                    throw new Exception("적용할 컨텍스트가 없습니다.");
-                }
+                            // 생성된 컨텍스트가 있는지 확인
+                            if (generatedContext == null)
+                            {
+                                throw new Exception("적용할 컨텍스트가 없습니다.");
+                            }
+                            
+                            writer.IsTargetProg = isTargetProg;
 
-                // 파일 열기 시도
-                Console.WriteLine($"파일 열기 시도: {programToChange.FilePath}");
-                if (!writer.OpenFile(programToChange.FilePath))
-                {
-                    throw new Exception("파일을 열 수 없습니다.");
-                }
-                Console.WriteLine("파일 열기 성공");
+                            // 파일 열기 시도
+                            Console.WriteLine($"파일 열기 시도: {programToChange.FilePath}");
+                            if (!writer.OpenFile(programToChange.FilePath))
+                            {
+                                throw new Exception("파일을 열 수 없습니다.");
+                            }
+                            Console.WriteLine("파일 열기 성공");
 
-                // 컨텍스트 적용
-                Console.WriteLine("컨텍스트 적용 시작...");
-                bool success = writer.ApplyTextWithStyle(
-                    generatedContext,
-                    programToChange.Position
-                );
+                            // 컨텍스트 적용
+                            Console.WriteLine("컨텍스트 적용 시작...");
+                            bool success = writer.ApplyTextWithStyle(
+                                generatedContext,
+                                programToChange.Position
+                            );
 
-                if (!success)
-                {
-                    throw new Exception("컨텍스트 적용에 실패했습니다.");
-                }
+                            if (!success)
+                            {
+                                throw new Exception("컨텍스트 적용에 실패했습니다.");
+                            }
 
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 컨텍스트 적용 완료");
+                            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 컨텍스트 적용 완료");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 컨텍스트 적용 중 오류 발생: {ex.Message}");
+                            Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                            if (ex.InnerException != null)
+                            {
+                                Console.WriteLine($"내부 예외: {ex.InnerException.Message}");
+                                Console.WriteLine($"내부 예외 스택 트레이스: {ex.InnerException.StackTrace}");
+                            }
+                            throw;
+                        }
+                    });
+
+                    thread.SetApartmentState(ApartmentState.STA);
+                    thread.Start();
+                    thread.Join();
+                });
             }
             catch (Exception ex)
             {
@@ -363,19 +393,24 @@ namespace overlay_gpt.Network
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData 조회 성공");
 
                 var filePath = targetProgram[1];
+                
+                // 테스트 파일 경로
+                filePath = "C:\\Users\\beste\\OneDrive\\Desktop\\testFolder\\single_test.docx";
+                
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
 
                 // 파일 내용 읽기
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 시작");
                 var contextReader = new TargetProgContextReader();
-                string fileContent = await contextReader.ReadFileContent(filePath, fileType);
+                var (fileContent, position) = await contextReader.ReadFileContent(filePath, fileType);
+                
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 완료 - 크기: {fileContent.Length} 문자");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 위치 정보: {position}");
 
                 // 파일 정보 가져오기
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 시작");
-                var ntfsFileFinder = new NtfsFileFinder();
-                var fileInfo = ntfsFileFinder.GetFileInfo(filePath);
-                if (fileInfo.FileId == 0 || fileInfo.VolumeId == 0)
+                var fileInfo = contextReader.GetFileInfo(filePath);
+                if (fileInfo.FileId == null || fileInfo.VolumeId == null)
                 {
                     throw new Exception("파일 정보를 가져올 수 없습니다.");
                 }
@@ -387,9 +422,10 @@ namespace overlay_gpt.Network
                 {
                     FilePath = filePath,
                     FileType = fileType,
-                    FileId = fileInfo.FileId,
-                    VolumeId = fileInfo.VolumeId,
-                    GeneratedContext = fileContent
+                    FileId = fileInfo.FileId.Value,
+                    VolumeId = fileInfo.VolumeId.Value,
+                    GeneratedContext = fileContent,
+                    Position = position
                 };
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 완료");
 

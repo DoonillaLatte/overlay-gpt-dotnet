@@ -12,6 +12,21 @@ namespace overlay_gpt
     {
         private Microsoft.Office.Interop.Excel.Application? _excelApp;
         private Workbook? _workbook;
+        private bool _isTargetProg;
+        private string? _filePath;
+
+        public bool IsTargetProg
+        {
+            get => _isTargetProg;
+            set => _isTargetProg = value;
+        }
+
+        public ExcelContextWriter(bool isTargetProg = false, string filePath = "")
+        {
+            Console.WriteLine($"ExcelContextWriter 생성 시도 - isTargetProg: {isTargetProg}");
+            _isTargetProg = isTargetProg;
+            _filePath = filePath;
+        }
 
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
@@ -41,9 +56,36 @@ namespace overlay_gpt
                     return false;
                 }
 
-                _excelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
-                _workbook = _excelApp.Workbooks.Open(filePath);
-                return true;
+                try
+                {
+                    Console.WriteLine("기존 Excel 애플리케이션 찾기 시도...");
+                    _excelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
+                    Console.WriteLine($"_excelApp 초기화 상태: {_excelApp != null}");
+                    
+                    if(_excelApp != null)
+                    {
+                        Console.WriteLine("기존 Excel 애플리케이션 찾음");
+                        _workbook = _excelApp.Workbooks.Open(filePath);
+                        Console.WriteLine($"_workbook 초기화 상태: {_workbook != null}");
+                        Console.WriteLine($"워크북 열기 성공: {_workbook.Name}");
+                        return true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("기존 Excel 애플리케이션을 찾을 수 없습니다.");
+                        _excelApp = new Microsoft.Office.Interop.Excel.Application();
+                        Console.WriteLine($"_excelApp 새로 생성 상태: {_excelApp != null}");
+                        _workbook = _excelApp.Workbooks.Open(filePath);
+                        Console.WriteLine($"_workbook 초기화 상태: {_workbook != null}");
+                        Console.WriteLine($"새 Excel 애플리케이션 생성 및 워크북 열기 성공: {_workbook.Name}");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Excel 애플리케이션이 실행 중이지 않습니다: {ex.Message}");
+                    return false;
+                }
             }
             catch (Exception ex)
             {
@@ -65,9 +107,11 @@ namespace overlay_gpt
         /// </param>
         public bool ApplyTextWithStyle(string htmlText, string lineNumber)
         {
+            Console.WriteLine($"ApplyTextWithStyle 시작 - _excelApp 상태: {_excelApp != null}, _workbook 상태: {_workbook != null}");
             if (_excelApp == null || _workbook == null)
             {
                 Console.WriteLine("Excel 애플리케이션 또는 워크북이 초기화되지 않았습니다.");
+                Console.WriteLine($"_excelApp: {_excelApp}, _workbook: {_workbook}");
                 return false;
             }
 

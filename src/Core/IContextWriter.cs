@@ -5,6 +5,11 @@ namespace overlay_gpt
     public interface IContextWriter
     {
         /// <summary>
+        /// 백그라운드 프로세스 여부를 나타냅니다.
+        /// </summary>
+        bool IsTargetProg { get; set; }
+
+        /// <summary>
         /// 파일을 백그라운드에서 엽니다.
         /// </summary>
         /// <param name="filePath">열 파일의 경로</param>

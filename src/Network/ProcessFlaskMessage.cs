@@ -296,7 +296,23 @@ namespace overlay_gpt.Network
             {
                 Console.WriteLine("HandleResponseWorkflows 시작");
                 var chatId = data["chat_id"]?.Value<int>() ?? -1;
-                var similarProgramIds = data["similar_program_ids"]?.ToObject<List<List<long>>>() ?? new List<List<long>>();
+                var similarProgramIds = new List<List<long>>();
+                try 
+                {
+                    var rawIds = data["similar_program_ids"]?.ToObject<List<List<object>>>();
+                    if (rawIds != null)
+                    {
+                        similarProgramIds = rawIds.Select(innerList => 
+                            innerList.Select(item => 
+                                item != null ? Convert.ToInt64(item) : 0L
+                            ).ToList()
+                        ).ToList();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"similar_program_ids 변환 중 오류: {ex.Message}");
+                }
                 var status = data["status"]?.ToString();
                 string fileType = data["file_type"]?.ToString();
 

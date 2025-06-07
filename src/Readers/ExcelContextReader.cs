@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using System.IO;
+using System.Text;
 
 namespace overlay_gpt
 {
@@ -13,6 +14,15 @@ namespace overlay_gpt
     {
         private Microsoft.Office.Interop.Excel.Application? _excelApp;
         private Workbook? _workbook;
+        private bool _isTargetProg;
+        private string? _filePath;
+
+        public ExcelContextReader(bool isTargetProg = false, string filePath = "")
+        {
+            Console.WriteLine($"ExcelContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            _isTargetProg = isTargetProg;
+            _filePath = filePath;
+        }
 
         private Dictionary<string, string> ExtractStylesFromHtml(string htmlContent)
         {
@@ -49,32 +59,139 @@ namespace overlay_gpt
             {
                 Console.WriteLine("Excel 데이터 읽기 시작...");
 
-                // Excel COM 객체 가져오기
-                _excelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
-                if (_excelApp == null)
+                // Excel COM 객체 생성 시도
+                try
                 {
-                    Console.WriteLine("Excel 애플리케이션을 찾을 수 없습니다.");
+                    Console.WriteLine("기존 Excel 애플리케이션 찾기 시도...");
+                    _excelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
+                    
+                    
+                    if (_excelApp != null)
+                    {
+                        Console.WriteLine("기존 Excel 애플리케이션 찾음");
+                        Console.WriteLine($"Excel 버전: {_excelApp.Version}");
+                        Console.WriteLine($"활성 워크북 수: {_excelApp.Workbooks.Count}");
+                        
+                        // 활성 워크북 가져오기
+                        _workbook = _excelApp.ActiveWorkbook;
+                        if (_workbook == null)
+                        {
+                            Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
+                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                        }
+                        Console.WriteLine($"활성 워크북 이름: {_workbook.Name}");
+                    }
+                    else 
+                    {
+                        if (_isTargetProg)
+                        {
+                            Console.WriteLine("기존 프로세스가 없어, 새 Excel 프로세스를 생성합니다.");
+                            try
+                            {
+                                _excelApp = new Microsoft.Office.Interop.Excel.Application();
+                                Console.WriteLine("새 Excel 애플리케이션 생성 성공");
+                                _excelApp.Visible = false;  // Excel 창을 안보이게 설정
+
+                                Console.WriteLine($"활성 파일 경로: {_filePath}");
+
+                                if (!string.IsNullOrEmpty(_filePath))
+                                {
+                                    Console.WriteLine($"파일 열기 시도: {_filePath}");
+                                    _workbook = _excelApp.Workbooks.Open(_filePath);
+                                    Console.WriteLine("파일 열기 성공");
+                                }
+                                Console.WriteLine($"활성 워크북 상태: {(_workbook != null ? "존재함" : "없음")}");
+                            }
+                            catch (Exception createEx)
+                            {
+                                Console.WriteLine($"새 Excel 애플리케이션 생성 실패: {createEx.Message}");
+                                Console.WriteLine($"스택 트레이스: {createEx.StackTrace}");
+                                throw;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"기존 Excel 애플리케이션 찾기 실패: {ex.Message}");
+                    Console.WriteLine("Excel 애플리케이션이 실행 중이지 않습니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
 
-                // 활성 워크북 가져오기
-                _workbook = _excelApp.ActiveWorkbook;
-                if (_workbook == null)
+                if (_excelApp == null)
                 {
-                    Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
+                    Console.WriteLine("Excel 애플리케이션을 생성할 수 없습니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
 
                 // 선택된 범위 가져오기
-                Microsoft.Office.Interop.Excel.Range? selection = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                Microsoft.Office.Interop.Excel.Range? selection = null;
+                if (_isTargetProg)
+                {
+                    Console.WriteLine("전체 범위 선택");
+                    Worksheet worksheet = _workbook.ActiveSheet;
+                    Console.WriteLine($"현재 워크시트: {worksheet.Name}");
+                    
+                    selection = worksheet.UsedRange;
+                    Console.WriteLine($"선택된 범위: {selection.Address}");
+                    Console.WriteLine($"선택된 범위 행 수: {selection.Rows.Count}");
+                    Console.WriteLine($"선택된 범위 열 수: {selection.Columns.Count}");
+                    
+                    try 
+                    {
+                        // Excel을 일시적으로 보이게 설정
+                        bool originalVisible = _excelApp.Visible;
+                        _excelApp.Visible = true;
+                        
+                        // 선택된 범위를 클립보드에 복사
+                        Console.WriteLine("클립보드에 복사 시도...");
+                        selection.Copy();
+                        Console.WriteLine("클립보드 복사 완료");
+                        
+                        // 원래 상태로 복원
+                        _excelApp.Visible = originalVisible;
+                        
+                        // 클립보드 내용 확인
+                        Console.WriteLine("클립보드 형식 확인 중...");
+                        Console.WriteLine($"HTML 형식 존재: {Clipboard.ContainsText(TextDataFormat.Html)}");
+                        Console.WriteLine($"일반 텍스트 존재: {Clipboard.ContainsText()}");
+                        Console.WriteLine($"RTF 형식 존재: {Clipboard.ContainsText(TextDataFormat.Rtf)}");
+                        
+                        if (Clipboard.ContainsText(TextDataFormat.Html))
+                        {
+                            string htmlContent = Clipboard.GetText(TextDataFormat.Html);
+                            Console.WriteLine($"HTML 데이터 길이: {htmlContent.Length}");
+                            Console.WriteLine("HTML 데이터 일부: " + htmlContent.Substring(0, Math.Min(100, htmlContent.Length)));
+                            return (htmlContent, new Dictionary<string, object>(), selection.Address);
+                        }
+                        else
+                        {
+                            Console.WriteLine("클립보드에 HTML 형식 데이터 없음");
+                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"클립보드 복사 중 오류 발생: {ex.Message}");
+                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("선택된 범위 가져오기");
+                    selection = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                    if (selection != null)
+                    {
+                        selection.Copy();
+                    }
+                }
+
                 if (selection == null)
                 {
                     Console.WriteLine("선택된 범위가 없습니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }
-
-                // 선택된 범위를 클립보드에 복사
-                selection.Copy();
 
                 // HTML 형식으로 클립보드에서 가져오기
                 if (Clipboard.ContainsText(TextDataFormat.Html))
@@ -215,7 +332,22 @@ namespace overlay_gpt
                 string filePath = tempWorkbook.FullName;
                 string fileName = tempWorkbook.Name;
                 
-                return (null, null, "Excel", fileName, filePath);
+                // filePath가 비어있지 않을 때 일치 여부 체크
+                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
+                {
+                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
+                        return (null, null, "Excel", string.Empty, string.Empty);
+                    }
+                }
+                
+                // 파일 정보 가져오기
+                FileInfo fileInfo = new FileInfo(filePath);
+                ulong fileId = (ulong)fileInfo.GetHashCode();
+                uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
+                
+                return (fileId, volumeId, "Excel", fileName, filePath);
             }
             catch (Exception ex)
             {

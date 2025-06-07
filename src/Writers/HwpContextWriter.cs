@@ -14,10 +14,18 @@ namespace overlay_gpt
     {
         private readonly ILogger<HwpContextWriter> _logger;
         private string? _currentFilePath;
+        private bool _isTargetProg;
 
-        public HwpContextWriter(ILogger<HwpContextWriter> logger)
+        public bool IsTargetProg
+        {
+            get => _isTargetProg;
+            set => _isTargetProg = value;
+        }
+
+        public HwpContextWriter(ILogger<HwpContextWriter> logger, bool isTargetProg = false)
         {
             _logger = logger;
+            _isTargetProg = isTargetProg;
         }
 
         [DllImport("user32.dll")]
@@ -42,46 +50,38 @@ namespace overlay_gpt
         {
             try
             {
-                _logger.LogInformation($"한글 파일 열기 시도: {filePath}");
-                var hwpProcesses = Process.GetProcessesByName("Hwp");
-                
-                if (hwpProcesses.Length == 0)
+                if (!File.Exists(filePath))
                 {
-                    _logger.LogError("한글(Hwp)이 실행 중이지 않습니다.");
+                    _logger.LogError($"파일이 존재하지 않습니다: {filePath}");
                     return false;
                 }
 
-                Process? activeHwpProcess = null;
-                foreach (var process in hwpProcesses)
+                try
                 {
-                    if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowHandle == GetForegroundWindow())
+                    _logger.LogInformation("기존 한글 애플리케이션 찾기 시도...");
+                    var hwpApp = GetActiveObject("HwpFrame.HwpObject");
+                    
+                    if(hwpApp != null)
                     {
-                        activeHwpProcess = process;
-                        break;
+                        _logger.LogInformation("기존 한글 애플리케이션 찾음");
+                        _currentFilePath = filePath;
+                        return true;
+                    }
+                    else
+                    {
+                        _logger.LogError("기존 한글 애플리케이션을 찾을 수 없습니다.");
+                        return false;
                     }
                 }
-
-                if (activeHwpProcess == null)
+                catch (Exception ex)
                 {
-                    _logger.LogError("활성 한글 창을 찾을 수 없습니다.");
+                    _logger.LogError($"한글 애플리케이션이 실행 중이지 않습니다: {ex.Message}");
                     return false;
                 }
-
-                // 한글 자동화 객체 가져오기
-                var hwpApp = GetActiveObject("HwpFrame.HwpObject");
-                if (hwpApp == null)
-                {
-                    _logger.LogError("한글 자동화 객체를 가져올 수 없습니다.");
-                    return false;
-                }
-
-                _currentFilePath = filePath;
-                _logger.LogInformation("한글 파일 열기 성공");
-                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"한글 파일 열기 오류: {ex.Message}");
+                _logger.LogError($"파일 열기 오류: {ex.Message}");
                 return false;
             }
         }

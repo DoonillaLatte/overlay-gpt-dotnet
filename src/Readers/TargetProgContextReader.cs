@@ -3,93 +3,85 @@ using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace overlay_gpt
 {
     public class TargetProgContextReader
     {
-        public async Task<string> ReadFileContent(string filePath, string fileType)
+        public async Task<(string Content, string Position)> ReadFileContent(string filePath, string fileType)
         {
             string fileContent = string.Empty;
-            Process? editorProcess = null;
+            string position = string.Empty;
 
             try
             {
-                editorProcess = await StartEditorProcess(filePath, fileType);
-                if (editorProcess != null)
+                Console.WriteLine($"[DEBUG] 파일 경로: {filePath}, 파일 타입: {fileType}");
+                
+                // STA 스레드에서 실행
+                var tcs = new TaskCompletionSource<(string, string)>();
+                
+                var thread = new Thread(() =>
                 {
-                    // 프로세스가 시작될 때까지 잠시 대기
-                    editorProcess.WaitForInputIdle(5000);
-
-                    // 파일 내용 읽기
-                    var reader = ContextReaderFactory.CreateReader(AutomationElement.FromHandle(editorProcess.MainWindowHandle));
-                    if (reader != null)
+                    try
                     {
-                        // 전체 내용 읽기
-                        var (content, _, _) = reader.GetSelectedTextWithStyle(true);
-                        fileContent = content;
+                        var reader = ContextReaderFactory.CreateReader(AutomationElement.FromHandle(Process.GetCurrentProcess().MainWindowHandle), true, filePath);
+                        
+                        if (reader != null)
+                        {
+                            Console.WriteLine("[DEBUG] ContextReader 생성 성공");
+                            var (content, _, pos) = reader.GetSelectedTextWithStyle(true);
+                            fileContent = content;
+                            position = pos;
+                            Console.WriteLine($"[DEBUG] 파일 내용 길이: {content?.Length ?? 0}");
+                            Console.WriteLine($"[DEBUG] 위치 정보: {pos}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("[DEBUG] ContextReader 생성 실패");
+                        }
+                        
+                        tcs.SetResult((fileContent, position));
                     }
-                }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERROR] 파일 내용 읽기 실패: {ex.Message}");
+                        tcs.SetException(ex);
+                    }
+                });
+                
+                thread.SetApartmentState(ApartmentState.STA);
+                thread.Start();
+                
+                var result = await tcs.Task;
+                fileContent = result.Item1;
+                position = result.Item2;
             }
-            finally
+            catch (Exception ex)
             {
-                await CloseEditorProcess(editorProcess);
+                Console.WriteLine($"[ERROR] 파일 읽기 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"[ERROR] 스택 트레이스: {ex.StackTrace}");
+                throw;
             }
 
-            return fileContent;
+            return (fileContent, position);
         }
 
-        private async Task<Process?> StartEditorProcess(string filePath, string fileType)
+        public (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo(string filePath)
         {
-            ProcessStartInfo startInfo = new ProcessStartInfo
+            try
             {
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Hidden
-            };
-
-            switch (fileType.ToLower())
-            {
-                case "word":
-                    startInfo.FileName = "WINWORD.EXE";
-                    startInfo.Arguments = $"/q /n \"{filePath}\"";
-                    break;
-                case "excel":
-                    startInfo.FileName = "EXCEL.EXE";
-                    startInfo.Arguments = $"/e \"{filePath}\"";
-                    break;
-                case "powerpoint":
-                    startInfo.FileName = "POWERPNT.EXE";
-                    startInfo.Arguments = $"/s \"{filePath}\"";
-                    break;
-                case "hwp":
-                    startInfo.FileName = "Hwp.exe";
-                    startInfo.Arguments = $"\"{filePath}\"";
-                    break;
-                default:
-                    throw new ArgumentException($"지원하지 않는 파일 타입입니다: {fileType}");
-            }
-
-            return Process.Start(startInfo);
-        }
-
-        private async Task CloseEditorProcess(Process? process)
-        {
-            if (process != null && !process.HasExited)
-            {
-                try
+                var reader = ContextReaderFactory.CreateReader(AutomationElement.FromHandle(Process.GetCurrentProcess().MainWindowHandle), true, filePath);
+                if (reader != null)
                 {
-                    process.CloseMainWindow();
-                    await Task.Delay(3000);  // 3초 대기
-                    if (!process.HasExited)
-                    {
-                        process.Kill();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"프로세스 종료 중 오류 발생: {ex.Message}");
+                    return reader.GetFileInfo();
                 }
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] 파일 정보 가져오기 실패: {ex.Message}");
+            }
+            return (null, null, string.Empty, string.Empty, string.Empty);
         }
     }
 } 
