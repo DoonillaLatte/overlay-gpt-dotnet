@@ -395,7 +395,7 @@ namespace overlay_gpt.Network
                 var filePath = targetProgram[1];
                 
                 // 테스트 파일 경로
-                //filePath = "C:\\Users\\beste\\OneDrive\\Desktop\\testFolder\\single_test.docx";
+                filePath = "C:\\Users\\beste\\OneDrive\\Desktop\\testFolder\\single_test.pptx";
                 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
 
@@ -417,7 +417,13 @@ namespace overlay_gpt.Network
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 완료");
 
                 // ChatData의 target_program 업데이트
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 시작");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] TargetProgram 설정 시작");
+                Console.WriteLine($"- FilePath: {filePath}");
+                Console.WriteLine($"- FileType: {fileType}");
+                Console.WriteLine($"- FileId: {fileInfo.FileId.Value}");
+                Console.WriteLine($"- VolumeId: {fileInfo.VolumeId.Value}");
+                Console.WriteLine($"- GeneratedContext : {fileContent}");
+                Console.WriteLine($"- Position: {position}");
                 chatData.TargetProgram = new ProgramInfo
                 {
                     FilePath = filePath,
@@ -427,7 +433,7 @@ namespace overlay_gpt.Network
                     GeneratedContext = fileContent,
                     Position = position
                 };
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ChatData target_program 업데이트 완료");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] TargetProgram 설정 완료");
 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 워크플로우 선택 프로세스 완료");
             }

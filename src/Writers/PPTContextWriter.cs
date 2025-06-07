@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
+using System.Windows.Automation;
 using Microsoft.Office.Interop.PowerPoint;
 using Microsoft.Office.Core;
+using System.Runtime.InteropServices;
 using System.Diagnostics;
-using HtmlAgilityPack;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 using System.IO;
+using Forms = System.Windows.Forms;
+using HtmlAgilityPack;
 
 namespace overlay_gpt
 {
@@ -16,16 +20,8 @@ namespace overlay_gpt
         private Slide? _slide;
         private bool _isTargetProg;
 
-        public bool IsTargetProg
-        {
-            get => _isTargetProg;
-            set => _isTargetProg = value;
-        }
-
-        public PPTContextWriter(bool isTargetProg = false)
-        {
-            _isTargetProg = isTargetProg;
-        }
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
 
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
@@ -42,362 +38,614 @@ namespace overlay_gpt
             return obj;
         }
 
-        private int ConvertColorToRGB(int rgbColor)
+        public bool IsTargetProg
         {
-            int r = (rgbColor >> 16) & 0xFF;
-            int g = (rgbColor >> 8) & 0xFF;
-            int b = rgbColor & 0xFF;
-            return (b << 16) | (g << 8) | r;
+            get => _isTargetProg;
+            set => _isTargetProg = value;
         }
 
         public bool OpenFile(string filePath)
         {
             try
             {
+                Console.WriteLine($"PowerPoint 파일 열기 시도: {filePath}");
+
                 if (!File.Exists(filePath))
                 {
-                    Console.WriteLine($"파일이 존재하지 않습니다: {filePath}");
+                    Console.WriteLine("파일이 존재하지 않습니다.");
                     return false;
                 }
 
+                // 기존 PowerPoint 프로세스 확인
                 try
                 {
-                    Console.WriteLine("기존 PowerPoint 애플리케이션 찾기 시도...");
                     _pptApp = (Application)GetActiveObject("PowerPoint.Application");
                     
-                    if(_pptApp != null)
+                    // 이미 열려있는 프레젠테이션 확인
+                    foreach (Presentation pres in _pptApp.Presentations)
                     {
-                        Console.WriteLine("기존 PowerPoint 애플리케이션 찾음");
-                        
-                        // 현재 열려있는 모든 프레젠테이션 확인
-                        foreach (Presentation presentation in _pptApp.Presentations)
+                        if (pres.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
                         {
-                            if (presentation.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                Console.WriteLine("일치하는 프레젠테이션을 찾았습니다.");
-                                _presentation = presentation;
-                                _slide = _pptApp.ActiveWindow?.View?.Slide;
-                                return true;
-                            }
+                            _presentation = pres;
+                            _slide = _pptApp.ActiveWindow?.View?.Slide;
+                            Console.WriteLine("이미 열려있는 PowerPoint 파일을 사용합니다.");
+                            return true;
                         }
-
-                        // 일치하는 프레젠테이션이 없으면 새로 열기
-                        Console.WriteLine("일치하는 프레젠테이션을 찾지 못했습니다. 새로 열기를 시도합니다.");
-                        _presentation = _pptApp.Presentations.Open(filePath);
-                        _slide = _pptApp.ActiveWindow?.View?.Slide;
-                        return true;
-                    }
-                    else
-                    {
-                        Console.WriteLine("기존 PowerPoint 애플리케이션을 찾을 수 없습니다.");
-                        return false;
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"PowerPoint 애플리케이션이 실행 중이지 않습니다: {ex.Message}");
-                    return false;
+                    // PowerPoint가 실행중이 아닌 경우 새로 시작
+                    _pptApp = new Application();
                 }
+
+                // 새로 파일 열기
+                _presentation = _pptApp.Presentations.Open(filePath, WithWindow: MsoTriState.msoTrue);
+                _slide = _pptApp.ActiveWindow?.View?.Slide;
+
+                Console.WriteLine("PowerPoint 파일 열기 성공");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"파일 열기 오류: {ex.Message}");
+                Console.WriteLine($"PowerPoint 파일 열기 오류: {ex.Message}");
                 return false;
             }
+        }
+
+        private void ApplyStyleToShape(Microsoft.Office.Interop.PowerPoint.Shape shape, string style)
+        {
+            var styleDict = new Dictionary<string, string>();
+            foreach (var stylePart in style.Split(';'))
+            {
+                var parts = stylePart.Split(':');
+                if (parts.Length == 2)
+                {
+                    styleDict[parts[0].Trim()] = parts[1].Trim();
+                }
+            }
+
+            // 위치와 크기 적용
+            if (styleDict.ContainsKey("left"))
+                shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
+            if (styleDict.ContainsKey("top"))
+                shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
+            if (styleDict.ContainsKey("width"))
+                shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
+            if (styleDict.ContainsKey("height"))
+                shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
+
+            // 회전 적용
+            if (styleDict.ContainsKey("transform"))
+            {
+                var transform = styleDict["transform"];
+                if (transform.Contains("rotate"))
+                {
+                    var rotation = transform.Replace("rotate(", "").Replace("deg)", "");
+                    shape.Rotation = float.Parse(rotation);
+                }
+                else if (transform.Contains("rotateX"))
+                {
+                    var rotationX = transform.Replace("rotateX(", "").Replace("deg)", "");
+                    shape.ThreeD.RotationX = float.Parse(rotationX);
+                }
+                else if (transform.Contains("rotateY"))
+                {
+                    var rotationY = transform.Replace("rotateY(", "").Replace("deg)", "");
+                    shape.ThreeD.RotationY = float.Parse(rotationY);
+                }
+            }
+
+            // 3D 효과 적용
+            if (styleDict.ContainsKey("transform-style") && styleDict["transform-style"] == "preserve-3d")
+            {
+                shape.ThreeD.Visible = MsoTriState.msoTrue;
+            }
+            if (styleDict.ContainsKey("perspective"))
+            {
+                var perspective = styleDict["perspective"].Replace("px", "");
+                shape.ThreeD.Perspective = (MsoTriState)float.Parse(perspective);
+            }
+
+            // 텍스트 스타일 적용
+            if (styleDict.ContainsKey("font-family"))
+            {
+                Console.WriteLine($"폰트 적용: {styleDict["font-family"]}");
+                shape.TextFrame.TextRange.Font.Name = styleDict["font-family"];
+            }
+            if (styleDict.ContainsKey("font-weight"))
+            {
+                Console.WriteLine($"굵게 적용: {styleDict["font-weight"]}");
+                shape.TextFrame.TextRange.Font.Bold = styleDict["font-weight"] == "bold" ? MsoTriState.msoTrue : MsoTriState.msoFalse;
+            }
+            if (styleDict.ContainsKey("font-style"))
+            {
+                Console.WriteLine($"기울임 적용: {styleDict["font-style"]}");
+                shape.TextFrame.TextRange.Font.Italic = styleDict["font-style"] == "italic" ? MsoTriState.msoTrue : MsoTriState.msoFalse;
+            }
+            if (styleDict.ContainsKey("text-decoration"))
+            {
+                var decoration = styleDict["text-decoration"];
+                Console.WriteLine($"텍스트 장식 적용: {decoration}");
+                if (decoration.Contains("underline"))
+                {
+                    Console.WriteLine("밑줄 적용");
+                    if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                    {
+                        shape.TextFrame2.TextRange.Font.UnderlineStyle = MsoTextUnderlineType.msoUnderlineSingleLine;
+                    }
+                    else
+                    {
+                        shape.TextFrame.TextRange.Font.Underline = MsoTriState.msoTrue;
+                    }
+                }
+                if (decoration.Contains("line-through"))
+                {
+                    Console.WriteLine("취소선 적용");
+                    if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                    {
+                        shape.TextFrame2.TextRange.Font.StrikeThrough = MsoTriState.msoTrue;
+                    }
+                }
+            }
+
+            // 텍스트 색상 적용
+            if (styleDict.ContainsKey("color"))
+            {
+                var color = styleDict["color"];
+                if (color.StartsWith("#"))
+                {
+                    shape.TextFrame.TextRange.Font.Color.RGB = ParseColor(color);
+                }
+            }
+            else
+            {
+                shape.TextFrame.TextRange.Font.Color.RGB = 0;
+            }
+
+            // 폰트 크기 적용
+            if (styleDict.ContainsKey("font-size"))
+            {
+                var fontSize = styleDict["font-size"].Replace("pt", "").Trim();
+                if (float.TryParse(fontSize, out float size))
+                {
+                    shape.TextFrame.TextRange.Font.Size = size;
+                }
+            }
+
+            // 배경색 적용
+            if (styleDict.ContainsKey("background-color"))
+            {
+                var bgColor = styleDict["background-color"];
+                if (bgColor.StartsWith("rgba"))
+                {
+                    var rgba = bgColor.Replace("rgba(", "").Replace(")", "").Split(',');
+                    if (rgba.Length == 4)
+                    {
+                        int r = int.Parse(rgba[0].Trim());
+                        int g = int.Parse(rgba[1].Trim());
+                        int b = int.Parse(rgba[2].Trim());
+                        float a = float.Parse(rgba[3].Trim());
+                        
+                        if (a < 0.1f)
+                        {
+                            shape.Fill.Visible = MsoTriState.msoFalse;
+                        }
+                        else
+                        {
+                            shape.Fill.Visible = MsoTriState.msoTrue;
+                            shape.Fill.ForeColor.RGB = (b << 16) | (g << 8) | r;
+                            shape.Fill.Transparency = 1 - a;
+                        }
+                    }
+                }
+                else if (bgColor.StartsWith("rgb"))
+                {
+                    var rgb = bgColor.Replace("rgb(", "").Replace(")", "").Split(',');
+                    if (rgb.Length == 3)
+                    {
+                        int r = int.Parse(rgb[0].Trim());
+                        int g = int.Parse(rgb[1].Trim());
+                        int b = int.Parse(rgb[2].Trim());
+                        shape.Fill.Visible = MsoTriState.msoTrue;
+                        shape.Fill.ForeColor.RGB = (b << 16) | (g << 8) | r;
+                        shape.Fill.Transparency = 0;
+                    }
+                }
+                else if (bgColor.StartsWith("linear-gradient"))
+                {
+                    // 그라데이션 적용
+                    var gradient = bgColor.Replace("linear-gradient(", "").Replace(")", "");
+                    var parts = gradient.Split(',');
+                    if (parts.Length >= 2)
+                    {
+                        shape.Fill.GradientStops.Insert(ParseColor(parts[1].Trim()), 0);
+                        shape.Fill.GradientStops.Insert(ParseColor(parts[2].Trim()), 1);
+                    }
+                }
+            }
+            else
+            {
+                shape.Fill.Visible = MsoTriState.msoFalse;
+            }
+
+            // 테두리 적용
+            if (styleDict.ContainsKey("border"))
+            {
+                var border = styleDict["border"].Split(' ');
+                if (border.Length >= 3)
+                {
+                    shape.Line.Weight = float.Parse(border[0].Replace("px", ""));
+                    shape.Line.ForeColor.RGB = ParseColor(border[2]);
+                }
+            }
+            else
+            {
+                shape.Line.Visible = MsoTriState.msoFalse;
+            }
+
+            // 모서리 둥글기 적용
+            if (styleDict.ContainsKey("border-radius"))
+            {
+                var radius = styleDict["border-radius"].Replace("px", "");
+                shape.Adjustments[1] = float.Parse(radius);
+            }
+
+            // 그림자 효과 적용
+            if (styleDict.ContainsKey("box-shadow"))
+            {
+                var shadow = styleDict["box-shadow"].Split(' ');
+                if (shadow.Length >= 4)
+                {
+                    shape.Shadow.Visible = MsoTriState.msoTrue;
+                    shape.Shadow.OffsetX = float.Parse(shadow[0].Replace("px", ""));
+                    shape.Shadow.OffsetY = float.Parse(shadow[1].Replace("px", ""));
+                    shape.Shadow.Blur = float.Parse(shadow[2].Replace("px", ""));
+                    shape.Shadow.ForeColor.RGB = ParseColor(shadow[3]);
+                }
+            }
+
+            // Z-인덱스 적용
+            if (styleDict.ContainsKey("z-index"))
+            {
+                var zIndex = int.Parse(styleDict["z-index"]);
+                // Z-인덱스는 읽기 전용이므로 ZOrder 메서드를 사용
+                shape.ZOrder(MsoZOrderCmd.msoBringToFront);
+                for (int i = 0; i < zIndex; i++)
+                {
+                    shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                }
+            }
+        }
+
+        private int ParseColor(string color)
+        {
+            if (color.StartsWith("#"))
+            {
+                color = color.Substring(1);
+                int rgb = Convert.ToInt32(color, 16);
+                // RGB 순서를 BGR로 변경
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+                return (b << 16) | (g << 8) | r;
+            }
+            return 0;
         }
 
         public bool ApplyTextWithStyle(string text, string lineNumber)
         {
             try
             {
-                if (_pptApp == null || _slide == null)
+                Console.WriteLine("HTML 텍스트 적용 시작...");
+
+                if (_presentation == null)
                 {
-                    Console.WriteLine("PowerPoint 애플리케이션이 초기화되지 않았습니다.");
+                    Console.WriteLine("PowerPoint가 열려있지 않습니다.");
                     return false;
                 }
 
-                Console.WriteLine($"텍스트 적용 시작 - 라인 번호: {lineNumber}");
-                Console.WriteLine($"적용할 텍스트: {text}");
-
-                // 라인 번호 파싱 (예: "Slide 1")
-                var slideNumber = int.Parse(lineNumber.Replace("Slide ", ""));
-                Console.WriteLine($"슬라이드 번호: {slideNumber}");
-
-                // 슬라이드의 모든 객체 삭제
-                Console.WriteLine("슬라이드의 모든 객체 삭제 시작...");
-                while (_slide.Shapes.Count > 0)
+                // 전체 슬라이드 처리
+                if (lineNumber.StartsWith("All Slides"))
                 {
-                    try
-                    {
-                        _slide.Shapes[1].Delete();
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"객체 삭제 중 오류 발생: {ex.Message}");
-                        break;
-                    }
-                }
-                Console.WriteLine("슬라이드의 모든 객체 삭제 완료");
+                    var doc = new HtmlDocument();
+                    doc.LoadHtml(text);
 
-                // HTML 태그 처리
-                Console.WriteLine("HTML 파싱 시작...");
-                var htmlDoc = new HtmlAgilityPack.HtmlDocument();
-                htmlDoc.LoadHtml(text);
-                Console.WriteLine($"HTML 노드 수: {htmlDoc.DocumentNode.ChildNodes.Count}");
-
-                // HTML 노드 처리
-                foreach (var node in htmlDoc.DocumentNode.ChildNodes)
-                {
-                    try
+                    // 각 슬라이드별 div 찾기
+                    for (int i = 1; i <= _presentation.Slides.Count; i++)
                     {
-                        Console.WriteLine($"노드 처리 시작 - 타입: {node.NodeType}, 이름: {node.Name}");
-                        
-                        if (node.NodeType == HtmlAgilityPack.HtmlNodeType.Element)
+                        var slideDiv = doc.DocumentNode.SelectSingleNode($"//div[contains(@class, 'Slide{i}')]");
+                        if (slideDiv != null)
                         {
-                            var shape = _slide.Shapes.AddShape(
-                                MsoAutoShapeType.msoShapeRectangle,
-                                0, 0, 100, 100);
-
-                            // 스타일 속성 파싱
-                            var style = node.GetAttributeValue("style", "");
-                            Console.WriteLine($"스타일 속성: {style}");
+                            _slide = _presentation.Slides[i];
                             
-                            var styleAttributes = new Dictionary<string, string>();
-                            foreach (var stylePart in style.Split(';'))
+                            // 기존 도형 삭제
+                            while (_slide.Shapes.Count > 0)
                             {
-                                var parts = stylePart.Trim().Split(':');
-                                if (parts.Length == 2)
-                                {
-                                    var key = parts[0].Trim();
-                                    var value = parts[1].Trim();
-                                    if (!styleAttributes.ContainsKey(key))
-                                    {
-                                        styleAttributes[key] = value;
-                                    }
-                                }
+                                _slide.Shapes[1].Delete();
                             }
 
-                            // 위치와 크기 설정
-                            if (styleAttributes.TryGetValue("left", out var left))
-                                shape.Left = float.Parse(left.Replace("px", ""));
-                            if (styleAttributes.TryGetValue("top", out var top))
-                                shape.Top = float.Parse(top.Replace("px", ""));
-                            if (styleAttributes.TryGetValue("width", out var width))
-                                shape.Width = float.Parse(width.Replace("px", ""));
-                            if (styleAttributes.TryGetValue("height", out var height))
-                                shape.Height = float.Parse(height.Replace("px", ""));
-
-                            // 텍스트 설정
-                            var innerDiv = node.SelectSingleNode(".//div");
-                            if (innerDiv != null)
+                            // 슬라이드 내용 적용
+                            foreach (var node in slideDiv.ChildNodes)
                             {
-                                var innerStyle = innerDiv.GetAttributeValue("style", "");
-                                var innerStyleAttributes = new Dictionary<string, string>();
-                                foreach (var stylePart in innerStyle.Split(';'))
+                                if (node.NodeType == HtmlNodeType.Element)
                                 {
-                                    var parts = stylePart.Trim().Split(':');
-                                    if (parts.Length == 2)
-                                    {
-                                        var key = parts[0].Trim();
-                                        var value = parts[1].Trim();
-                                        if (!innerStyleAttributes.ContainsKey(key))
-                                        {
-                                            innerStyleAttributes[key] = value;
-                                        }
-                                    }
+                                    ProcessHtmlNode(node);
                                 }
-
-                                shape.TextFrame.TextRange.Text = innerDiv.InnerText;
-                                var textRange = shape.TextFrame.TextRange;
-
-                                // 텍스트 스타일 설정
-                                if (innerStyleAttributes.TryGetValue("font-family", out var fontFamily))
-                                    textRange.Font.Name = fontFamily.Trim('\'');
-                                if (innerStyleAttributes.TryGetValue("font-size", out var fontSize))
-                                {
-                                    var size = fontSize.Replace("pt", "").Trim();
-                                    if (float.TryParse(size, out float sizeValue))
-                                    {
-                                        textRange.Font.Size = sizeValue;
-                                    }
-                                }
-                                if (innerStyleAttributes.TryGetValue("color", out var color))
-                                {
-                                    if (color.StartsWith("#"))
-                                    {
-                                        var rgb = int.Parse(color.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                        textRange.Font.Color.RGB = ConvertColorToRGB(rgb);
-                                    }
-                                }
-                                else
-                                {
-                                    // 기본 색상을 검은색으로 설정
-                                    textRange.Font.Color.RGB = 0;
-                                }
-
-                                // 텍스트 정렬
-                                if (innerStyleAttributes.TryGetValue("text-align", out var textAlign))
-                                {
-                                    switch (textAlign)
-                                    {
-                                        case "center":
-                                            textRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignCenter;
-                                            break;
-                                        case "right":
-                                            textRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignRight;
-                                            break;
-                                        case "justify":
-                                            textRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignJustify;
-                                            break;
-                                        default:
-                                            textRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignLeft;
-                                            break;
-                                    }
-                                }
-
-                                // 수직 정렬
-                                if (innerStyleAttributes.TryGetValue("vertical-align", out var verticalAlign))
-                                {
-                                    switch (verticalAlign)
-                                    {
-                                        case "middle":
-                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorMiddle;
-                                            break;
-                                        case "bottom":
-                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorBottom;
-                                            break;
-                                        default:
-                                            shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorTop;
-                                            break;
-                                    }
-                                }
-                            }
-
-                            // 배경색 설정
-                            if (styleAttributes.TryGetValue("background-color", out var bgColor))
-                            {
-                                if (bgColor.StartsWith("#"))
-                                {
-                                    var rgb = int.Parse(bgColor.Substring(1), System.Globalization.NumberStyles.HexNumber);
-                                    shape.Fill.ForeColor.RGB = ConvertColorToRGB(rgb);
-                                }
-                            }
-
-                            // 투명도 설정
-                            if (styleAttributes.TryGetValue("opacity", out var opacity))
-                            {
-                                shape.Fill.Transparency = (1 - float.Parse(opacity)) * 100;
-                            }
-
-                            // 테두리 설정
-                            if (styleAttributes.TryGetValue("border", out var border))
-                            {
-                                var borderParts = border.Split(' ');
-                                if (borderParts.Length >= 3)
-                                {
-                                    shape.Line.Weight = float.Parse(borderParts[0].Replace("px", ""));
-                                    var borderColor = borderParts[2].Replace("#", "");
-                                    if (!string.IsNullOrEmpty(borderColor))
-                                    {
-                                        var rgb = int.Parse(borderColor, System.Globalization.NumberStyles.HexNumber);
-                                        shape.Line.ForeColor.RGB = ConvertColorToRGB(rgb);
-                                    }
-                                }
-                            }
-
-                            // 모서리 둥글기
-                            if (styleAttributes.TryGetValue("border-radius", out var borderRadius))
-                            {
-                                var radius = float.Parse(borderRadius.Replace("px", ""));
-                                shape.Adjustments[1] = radius / shape.Width * 100;
                             }
                         }
                     }
-                    catch (Exception ex)
+                    return true;
+                }
+
+                // 단일 슬라이드 처리
+                if (_slide == null)
+                {
+                    Console.WriteLine("현재 슬라이드가 없습니다.");
+                    return false;
+                }
+
+                // 슬라이드 번호 처리
+                if (lineNumber.StartsWith("Slide: "))
+                {
+                    int slideNumber = int.Parse(lineNumber.Replace("Slide: ", ""));
+                    if (slideNumber > 0 && slideNumber <= _presentation.Slides.Count)
                     {
-                        Console.WriteLine($"노드 처리 중 오류 발생: {ex.Message}");
-                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                        _slide = _presentation.Slides[slideNumber];
                     }
                 }
 
-                Console.WriteLine("텍스트 적용 완료");
+                // 기존 도형 삭제
+                while (_slide.Shapes.Count > 0)
+                {
+                    _slide.Shapes[1].Delete();
+                }
+
+                var singleDoc = new HtmlDocument();
+                singleDoc.LoadHtml(text);
+
+                // HTML 요소를 PowerPoint 도형으로 변환
+                foreach (var node in singleDoc.DocumentNode.ChildNodes)
+                {
+                    if (node.NodeType == HtmlNodeType.Element)
+                    {
+                        ProcessHtmlNode(node);
+                    }
+                }
+
+                Console.WriteLine("HTML 텍스트 적용 완료");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"텍스트 적용 중 오류 발생: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                Console.WriteLine($"HTML 텍스트 적용 오류: {ex.Message}");
                 return false;
+            }
+        }
+
+        private void ProcessHtmlNode(HtmlNode node)
+        {
+            if (node.Name.ToLower() == "div")
+            {
+                var shape = _slide.Shapes.AddShape(
+                    MsoAutoShapeType.msoShapeRectangle,
+                    0, 0, 100, 50);
+
+                // div의 스타일 적용
+                if (node.Attributes["style"] != null)
+                {
+                    var divStyle = node.Attributes["style"].Value;
+                    var styleDict = new Dictionary<string, string>();
+                    foreach (var stylePart in divStyle.Split(';'))
+                    {
+                        var parts = stylePart.Split(':');
+                        if (parts.Length == 2)
+                        {
+                            styleDict[parts[0].Trim()] = parts[1].Trim();
+                        }
+                    }
+
+                    // 위치와 크기 적용
+                    if (styleDict.ContainsKey("left"))
+                        shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
+                    if (styleDict.ContainsKey("top"))
+                        shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
+                    if (styleDict.ContainsKey("width"))
+                        shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
+                    if (styleDict.ContainsKey("height"))
+                        shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
+
+                    // 텍스트 정렬 적용
+                    if (styleDict.ContainsKey("text-align"))
+                    {
+                        var textAlign = styleDict["text-align"];
+                        switch (textAlign)
+                        {
+                            case "center":
+                                shape.TextFrame.TextRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignCenter;
+                                break;
+                            case "right":
+                                shape.TextFrame.TextRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignRight;
+                                break;
+                            case "justify":
+                                shape.TextFrame.TextRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignJustify;
+                                break;
+                            default:
+                                shape.TextFrame.TextRange.ParagraphFormat.Alignment = PpParagraphAlignment.ppAlignLeft;
+                                break;
+                        }
+                    }
+
+                    // 수직 정렬 적용
+                    if (styleDict.ContainsKey("vertical-align"))
+                    {
+                        var verticalAlign = styleDict["vertical-align"];
+                        switch (verticalAlign)
+                        {
+                            case "middle":
+                                shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorMiddle;
+                                break;
+                            case "bottom":
+                                shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorBottom;
+                                break;
+                            default:
+                                shape.TextFrame.VerticalAnchor = MsoVerticalAnchor.msoAnchorTop;
+                                break;
+                        }
+                    }
+
+                    // 기존 스타일 적용 메서드 호출
+                    ApplyStyleToShape(shape, divStyle);
+                }
+
+                // span 태그 처리
+                foreach (var spanNode in node.ChildNodes)
+                {
+                    if (spanNode.NodeType == HtmlNodeType.Element && spanNode.Name.ToLower() == "span")
+                    {
+                        Console.WriteLine($"Span 태그 발견: {spanNode.OuterHtml}");
+                        
+                        // span의 스타일 적용
+                        if (spanNode.Attributes["style"] != null)
+                        {
+                            var spanStyle = spanNode.Attributes["style"].Value;
+                            Console.WriteLine($"Span 스타일: {spanStyle}");
+                            var styleDict = new Dictionary<string, string>();
+                            foreach (var stylePart in spanStyle.Split(';'))
+                            {
+                                var parts = stylePart.Split(':');
+                                if (parts.Length == 2)
+                                {
+                                    styleDict[parts[0].Trim()] = parts[1].Trim();
+                                }
+                            }
+
+                            // 텍스트 설정
+                            if (spanNode.InnerText != null)
+                            {
+                                Console.WriteLine($"Span 텍스트: {spanNode.InnerText}");
+                                shape.TextFrame.TextRange.Text = spanNode.InnerText;
+                                
+                                // <s> 태그 확인
+                                if (spanNode.InnerHtml.Contains("<s>"))
+                                {
+                                    Console.WriteLine("취소선 적용");
+                                    if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                                    {
+                                        shape.TextFrame2.TextRange.Font.StrikeThrough = MsoTriState.msoTrue;
+                                    }
+                                }
+                            }
+
+                            // 텍스트 스타일 적용
+                            if (styleDict.ContainsKey("font-weight"))
+                            {
+                                Console.WriteLine($"굵게 적용: {styleDict["font-weight"]}");
+                                shape.TextFrame.TextRange.Font.Bold = styleDict["font-weight"] == "bold" ? MsoTriState.msoTrue : MsoTriState.msoFalse;
+                            }
+                            if (styleDict.ContainsKey("font-style"))
+                            {
+                                Console.WriteLine($"기울임 적용: {styleDict["font-style"]}");
+                                shape.TextFrame.TextRange.Font.Italic = styleDict["font-style"] == "italic" ? MsoTriState.msoTrue : MsoTriState.msoFalse;
+                            }
+                            if (styleDict.ContainsKey("text-decoration"))
+                            {
+                                var decoration = styleDict["text-decoration"];
+                                Console.WriteLine($"텍스트 장식 적용: {decoration}");
+                                if (decoration.Contains("underline"))
+                                {
+                                    Console.WriteLine("밑줄 적용");
+                                    if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                                    {
+                                        shape.TextFrame2.TextRange.Font.UnderlineStyle = MsoTextUnderlineType.msoUnderlineSingleLine;
+                                    }
+                                    else
+                                    {
+                                        shape.TextFrame.TextRange.Font.Underline = MsoTriState.msoTrue;
+                                    }
+                                }
+                                if (decoration.Contains("line-through"))
+                                {
+                                    Console.WriteLine("취소선 적용");
+                                    if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                                    {
+                                        shape.TextFrame2.TextRange.Font.StrikeThrough = MsoTriState.msoTrue;
+                                    }
+                                }
+                            }
+
+                            // 폰트 크기 적용
+                            if (styleDict.ContainsKey("font-size"))
+                            {
+                                var fontSize = styleDict["font-size"].Replace("pt", "").Trim();
+                                if (float.TryParse(fontSize, out float size))
+                                {
+                                    shape.TextFrame.TextRange.Font.Size = size;
+                                }
+                            }
+
+                            // 하이라이트 색상 적용
+                            if (styleDict.ContainsKey("background-color"))
+                            {
+                                var bgColor = styleDict["background-color"];
+                                if (bgColor.StartsWith("rgba"))
+                                {
+                                    var rgba = bgColor.Replace("rgba(", "").Replace(")", "").Split(',');
+                                    if (rgba.Length == 4)
+                                    {
+                                        int r = int.Parse(rgba[0].Trim());
+                                        int g = int.Parse(rgba[1].Trim());
+                                        int b = int.Parse(rgba[2].Trim());
+                                        float a = float.Parse(rgba[3].Trim());
+                                        
+                                        if (a > 0.1f)
+                                        {
+                                            shape.TextFrame2.TextRange.Font.Highlight.RGB = (b << 16) | (g << 8) | r;
+                                        }
+                                    }
+                                }
+                                else if (bgColor.StartsWith("rgb"))
+                                {
+                                    var rgb = bgColor.Replace("rgb(", "").Replace(")", "").Split(',');
+                                    if (rgb.Length == 3)
+                                    {
+                                        int r = int.Parse(rgb[0].Trim());
+                                        int g = int.Parse(rgb[1].Trim());
+                                        int b = int.Parse(rgb[2].Trim());
+                                        shape.TextFrame2.TextRange.Font.Highlight.RGB = (b << 16) | (g << 8) | r;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         public (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
-            Application? tempPptApp = null;
-            Presentation? tempPresentation = null;
-            
             try
             {
-                Console.WriteLine("PowerPoint COM 객체 가져오기 시도...");
-                tempPptApp = (Application)GetActiveObject("PowerPoint.Application");
-                Console.WriteLine("PowerPoint COM 객체 가져오기 성공");
-
-                Console.WriteLine("활성 프레젠테이션 가져오기 시도...");
-                tempPresentation = tempPptApp.ActivePresentation;
-                
-                if (tempPresentation == null)
-                {
-                    Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
+                if (_presentation == null)
                     return (null, null, "PowerPoint", string.Empty, string.Empty);
-                }
 
-                string filePath = tempPresentation.FullName;
-                string fileName = tempPresentation.Name;
-                
-                Console.WriteLine($"PowerPoint 프레젠테이션 정보:");
-                Console.WriteLine($"- 파일 경로: {filePath}");
-                Console.WriteLine($"- 파일 이름: {fileName}");
-                
+                string filePath = _presentation.FullName;
                 if (string.IsNullOrEmpty(filePath))
-                {
-                    Console.WriteLine("파일 경로가 비어있습니다.");
-                    return (null, null, "PowerPoint", fileName, string.Empty);
-                }
-                
-                return (null, null, "PowerPoint", fileName, filePath);
+                    return (null, null, "PowerPoint", _presentation.Name, string.Empty);
+
+                return (
+                    null,
+                    null,
+                    "PowerPoint",
+                    _presentation.Name,
+                    filePath
+                );
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
-                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 return (null, null, "PowerPoint", string.Empty, string.Empty);
             }
-            finally
-            {
-                if (tempPresentation != null) Marshal.ReleaseComObject(tempPresentation);
-                if (tempPptApp != null) Marshal.ReleaseComObject(tempPptApp);
-            }
-        }
-
-        public void Dispose()
-        {
-            if (_slide != null)
-            {
-                try { Marshal.ReleaseComObject(_slide); } catch { }
-                _slide = null;
-            }
-            if (_presentation != null)
-            {
-                try { Marshal.ReleaseComObject(_presentation); } catch { }
-                _presentation = null;
-            }
-            if (_pptApp != null)
-            {
-                try { Marshal.ReleaseComObject(_pptApp); } catch { }
-                _pptApp = null;
-            }
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
         }
     }
 }

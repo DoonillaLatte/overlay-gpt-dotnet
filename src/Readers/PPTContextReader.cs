@@ -9,6 +9,7 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.IO;
 using Forms = System.Windows.Forms;
+using HtmlAgilityPack;
 
 namespace overlay_gpt
 {
@@ -17,6 +18,8 @@ namespace overlay_gpt
         private Application? _pptApp;
         private Presentation? _presentation;
         private Slide? _slide;
+        private bool _isTargetProg;
+        private string? _filePath;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -140,19 +143,76 @@ namespace overlay_gpt
         private string GetStyledText(string text, Dictionary<string, object> styleAttributes)
         {
             string result = text;
-            if (styleAttributes.ContainsKey("UnderlineStyle") && styleAttributes["UnderlineStyle"]?.ToString() == "Single")
-                result = $"<u>{result}</u>";
+            var styles = new List<string>();
+            var spanStyles = new List<string>();
+
+            // 하이라이트 색상 처리
+            if (styleAttributes.ContainsKey("HighlightColor"))
+            {
+                int highlightColor = Convert.ToInt32(styleAttributes["HighlightColor"]);
+                if (highlightColor != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(highlightColor);
+                    int r = (rgbColor >> 16) & 0xFF;
+                    int g = (rgbColor >> 8) & 0xFF;
+                    int b = rgbColor & 0xFF;
+                    spanStyles.Add($"background-color: rgb({r}, {g}, {b})");
+                }
+            }
+
+            // 배경색 처리
+            if (styleAttributes.ContainsKey("BackgroundColor"))
+            {
+                int bgColor = Convert.ToInt32(styleAttributes["BackgroundColor"]);
+                if (bgColor != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(bgColor);
+                    double transparency = styleAttributes.ContainsKey("BackgroundTransparency") ? 
+                        Convert.ToDouble(styleAttributes["BackgroundTransparency"]) : 0.0;
+                    
+                    if (transparency < 1.0)
+                    {
+                        int r = (rgbColor >> 16) & 0xFF;
+                        int g = (rgbColor >> 8) & 0xFF;
+                        int b = rgbColor & 0xFF;
+                        spanStyles.Add($"background-color: rgba({r}, {g}, {b}, {1.0 - transparency})");
+                    }
+                }
+            }
+
+            // 기타 텍스트 스타일 처리
+            if (styleAttributes.ContainsKey("UnderlineStyle"))
+            {
+                string underlineStyle = styleAttributes["UnderlineStyle"]?.ToString() ?? "none";
+                if (underlineStyle == "underline")
+                {
+                    spanStyles.Add("text-decoration: underline");
+                }
+            }
             if (styleAttributes.ContainsKey("FontWeight") && styleAttributes["FontWeight"]?.ToString() == "Bold")
-                result = $"<b>{result}</b>";
+                spanStyles.Add("font-weight: bold");
             if (styleAttributes.ContainsKey("FontItalic") && styleAttributes["FontItalic"] is MsoTriState italic && italic == MsoTriState.msoTrue)
-                result = $"<i>{result}</i>";
+                spanStyles.Add("font-style: italic");
             if (styleAttributes.ContainsKey("FontStrikethrough") && styleAttributes["FontStrikethrough"] is MsoTriState strikethrough && strikethrough == MsoTriState.msoTrue)
                 result = $"<s>{result}</s>";
             if (styleAttributes.ContainsKey("FontSize"))
             {
                 double fontSize = Convert.ToDouble(styleAttributes["FontSize"]);
-                result = $"<span style='font-size: {fontSize}pt'>{result}</span>";
+                spanStyles.Add($"font-size: {fontSize}pt");
             }
+
+            // span 스타일이 있는 경우 span 태그로 감싸기
+            if (spanStyles.Count > 0)
+            {
+                result = $"<span style='{string.Join("; ", spanStyles)}'>{result}</span>";
+            }
+
+            // div 스타일이 있는 경우 div 태그로 감싸기
+            if (styles.Count > 0)
+            {
+                result = $"<div style='{string.Join("; ", styles)}'>{result}</div>";
+            }
+
             return result;
         }
 
@@ -198,40 +258,6 @@ namespace overlay_gpt
                 }
             }
 
-            // 배경색
-            if (styleAttributes.ContainsKey("BackgroundColor"))
-            {
-                int bgColor = Convert.ToInt32(styleAttributes["BackgroundColor"]);
-                if (bgColor != 0)
-                {
-                    int rgbColor = ConvertColorToRGB(bgColor);
-                    double transparency = styleAttributes.ContainsKey("BackgroundTransparency") ? 
-                        Convert.ToDouble(styleAttributes["BackgroundTransparency"]) : 0.0;
-                    
-                    if (transparency < 1.0)
-                    {
-                        int r = (rgbColor >> 16) & 0xFF;
-                        int g = (rgbColor >> 8) & 0xFF;
-                        int b = rgbColor & 0xFF;
-                        styleList.Add($"background-color: rgba({r}, {g}, {b}, {1.0 - transparency})");
-                    }
-                }
-            }
-
-            // 하이라이트 색
-            if (styleAttributes.ContainsKey("HighlightColor"))
-            {
-                int highlightColor = Convert.ToInt32(styleAttributes["HighlightColor"]);
-                if (highlightColor != 0)
-                {
-                    int rgbColor = ConvertColorToRGB(highlightColor);
-                    int r = (rgbColor >> 16) & 0xFF;
-                    int g = (rgbColor >> 8) & 0xFF;
-                    int b = rgbColor & 0xFF;
-                    styleList.Add($"background-color: rgb({r}, {g}, {b})");
-                }
-            }
-
             // 텍스트 정렬 설정
             string textAlign = "left";
             if (styleAttributes.ContainsKey("TextAlign"))
@@ -250,7 +276,8 @@ namespace overlay_gpt
 
             // Flexbox 속성 설정
             styleList.Add("display: flex");
-            styleList.Add("align-items: center");
+            styleList.Add("width: 100%");
+            styleList.Add("height: 100%");
             
             // 수평 정렬에 따른 justify-content 설정
             switch (textAlign)
@@ -420,7 +447,49 @@ namespace overlay_gpt
                 styleAttributes["FontName"] = textRange.Font.Name;
                 styleAttributes["FontWeight"] = textRange.Font.Bold == MsoTriState.msoTrue ? "Bold" : "Normal";
                 styleAttributes["FontItalic"] = textRange.Font.Italic;
-                styleAttributes["UnderlineStyle"] = textRange.Font.Underline;
+                
+                // 밑줄 스타일 처리 - TextFrame2 사용
+                if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                {
+                    var tr2 = shape.TextFrame2.TextRange;
+                    if (tr2.Font.UnderlineStyle != MsoTextUnderlineType.msoNoUnderline)
+                    {
+                        switch (tr2.Font.UnderlineStyle)
+                        {
+                            case MsoTextUnderlineType.msoUnderlineSingleLine:
+                            case MsoTextUnderlineType.msoUnderlineDoubleLine:
+                            case MsoTextUnderlineType.msoUnderlineHeavyLine:
+                            case MsoTextUnderlineType.msoUnderlineDottedLine:
+                            case MsoTextUnderlineType.msoUnderlineDashLine:
+                            case MsoTextUnderlineType.msoUnderlineDotDashLine:
+                            case MsoTextUnderlineType.msoUnderlineDotDotDashLine:
+                            case MsoTextUnderlineType.msoUnderlineWavyLine:
+                            case MsoTextUnderlineType.msoUnderlineWavyHeavyLine:
+                            case MsoTextUnderlineType.msoUnderlineWavyDoubleLine:
+                                styleAttributes["UnderlineStyle"] = "underline";
+                                break;
+                            default:
+                                styleAttributes["UnderlineStyle"] = "none";
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        styleAttributes["UnderlineStyle"] = "none";
+                    }
+
+                    // 취소선 처리 - TextFrame2 사용
+                    if (tr2.Font.StrikeThrough == MsoTriState.msoTrue)
+                    {
+                        styleAttributes["FontStrikethrough"] = MsoTriState.msoTrue;
+                    }
+                }
+                else
+                {
+                    // 레거시 TextFrame 사용
+                    styleAttributes["UnderlineStyle"] = textRange.Font.Underline == MsoTriState.msoTrue ? "underline" : "none";
+                }
+                
                 styleAttributes["ForegroundColor"] = textRange.Font.Color.RGB;
                 
                 // Shape의 배경색 사용
@@ -471,124 +540,197 @@ namespace overlay_gpt
                 }
                 
                 string textStyle = GetTextStyleString(styleAttributes);
-                content = $"<div style='{textStyle}'>{textRange.Text}</div>";
+                content = GetStyledText(textRange.Text, styleAttributes);
+                
+                // 스타일 병합
+                var mergedStyles = new Dictionary<string, string>();
+                
+                // 외부 div 스타일 파싱
+                foreach (var style in styleString.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = style.Trim().Split(':');
+                    if (parts.Length == 2)
+                    {
+                        mergedStyles[parts[0].Trim()] = parts[1].Trim();
+                    }
+                }
+                
+                // 내부 div 스타일 파싱 및 병합
+                foreach (var style in textStyle.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = style.Trim().Split(':');
+                    if (parts.Length == 2)
+                    {
+                        var key = parts[0].Trim();
+                        var value = parts[1].Trim();
+                        
+                        // background-color와 font-size는 제외하고 다른 스타일만 병합
+                        if (key != "background-color" && key != "font-size" && 
+                            (key == "color" || key == "text-align" || key == "vertical-align"))
+                        {
+                            mergedStyles[key] = value;
+                        }
+                    }
+                }
+                
+                // 병합된 스타일 문자열 생성
+                string mergedStyleString = string.Join("; ", mergedStyles.Select(kv => $"{kv.Key}: {kv.Value}"));
+                
+                // 디버깅을 위한 출력
+                Console.WriteLine("\n=== Shape HTML 변환 정보 ===");
+                Console.WriteLine($"Shape Type: {shapeType}");
+                Console.WriteLine($"Content: {content}");
+                Console.WriteLine($"Merged Styles: {mergedStyleString}");
+                Console.WriteLine($"Final HTML: <{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>");
+                Console.WriteLine("===========================\n");
+                
+                return $"<{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>";
             }
             else if (shape.Type == MsoShapeType.msoPicture)
             {
                 content = $"<img src='data:image/png;base64,...' alt='Image' />";
+                return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
             }
 
             return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
         }
 
+        public PPTContextReader(bool isTargetProg = false, string filePath = "")
+        {
+            Console.WriteLine($"PPTContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            _isTargetProg = isTargetProg;
+            _filePath = filePath;
+        }
+
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
+            var styledTextBuilder = new StringBuilder();
+            var styleAttributes = new Dictionary<string, object>();
+            string selectedText = string.Empty;
+            string lineNumber = string.Empty;
+
             try
             {
                 Console.WriteLine("PowerPoint 데이터 읽기 시작...");
+                Console.WriteLine($"readAllContent: {readAllContent}");
+                Console.WriteLine($"isTargetProg: {_isTargetProg}");
 
                 var pptProcesses = Process.GetProcessesByName("POWERPNT");
-                if (pptProcesses.Length == 0)
-                {
-                    Console.WriteLine("실행 중인 PowerPoint 애플리케이션을 찾을 수 없습니다.");
-                    throw new InvalidOperationException("PowerPoint is not running");
-                }
-
-                Process? activePPTProcess = null;
-                foreach (var process in pptProcesses)
-                {
-                    if (process.MainWindowHandle != IntPtr.Zero && process.MainWindowTitle.Length > 0)
-                    {
-                        Console.WriteLine($"PowerPoint 프로세스 정보:");
-                        Console.WriteLine($"- 프로세스 ID: {process.Id}");
-                        Console.WriteLine($"- 창 제목: {process.MainWindowTitle}");
-                        Console.WriteLine($"- 실행 경로: {process.MainModule?.FileName}");
-                        
-                        if (process.MainWindowHandle == GetForegroundWindow())
-                        {
-                            activePPTProcess = process;
-                            Console.WriteLine("이 PowerPoint 창이 현재 활성화되어 있습니다.");
-                        }
-                    }
-                }
-
-                if (activePPTProcess == null)
-                {
-                    Console.WriteLine("활성화된 PowerPoint 창을 찾을 수 없습니다.");
-                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                }
-
+                Console.WriteLine($"실행 중인 PowerPoint 프로세스 수: {pptProcesses.Length}");
+                
                 try
                 {
                     Console.WriteLine("PowerPoint COM 객체 가져오기 시도...");
                     _pptApp = (Application)GetActiveObject("PowerPoint.Application");
                     Console.WriteLine("PowerPoint COM 객체 가져오기 성공");
 
-                    Console.WriteLine("활성 프레젠테이션 가져오기 시도...");
-                    _presentation = _pptApp.ActivePresentation;
-                    
-                    if (_presentation == null)
+                    if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                     {
-                        Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                    }
-                    
-                    Console.WriteLine($"활성 프레젠테이션 정보:");
-                    Console.WriteLine($"- 프레젠테이션 이름: {_presentation.Name}");
-                    Console.WriteLine($"- 전체 경로: {_presentation.FullName}");
-                    Console.WriteLine($"- 저장 여부: {(_presentation.Saved == MsoTriState.msoTrue ? "저장됨" : "저장되지 않음")}");
-                    Console.WriteLine($"- 읽기 전용: {(_presentation.ReadOnly == MsoTriState.msoTrue ? "예" : "아니오")}");
+                        // 이미 열려있는 프레젠테이션 확인
+                        bool fileAlreadyOpen = false;
+                        foreach (Presentation pres in _pptApp.Presentations)
+                        {
+                            if (pres.FullName.Equals(_filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _presentation = pres;
+                                fileAlreadyOpen = true;
+                                Console.WriteLine("이미 열려있는 PowerPoint 파일을 사용합니다.");
+                                break;
+                            }
+                        }
 
-                    _slide = _pptApp.ActiveWindow?.View?.Slide;
-                    if (_slide == null)
-                    {
-                        Console.WriteLine("활성 슬라이드를 찾을 수 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                    }
-
-                    Microsoft.Office.Interop.PowerPoint.ShapeRange? shapes;
-                    if (readAllContent)
-                    {
-                        shapes = _slide.Shapes.Range();
+                        if (!fileAlreadyOpen)
+                        {
+                            Console.WriteLine($"파일 열기 시도: {_filePath}");
+                            _presentation = _pptApp.Presentations.Open(_filePath);
+                            Console.WriteLine("파일 열기 성공");
+                        }
                     }
                     else
                     {
-                        shapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
+                        _presentation = _pptApp.ActivePresentation;
                     }
-
-                    if (shapes == null)
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"PowerPoint COM 객체 가져오기 실패: {ex.Message}");
+                    if (_isTargetProg)
                     {
-                        Console.WriteLine("선택된 텍스트가 없습니다.");
-                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
-                    }
+                        Console.WriteLine("새 PowerPoint 프로세스를 생성합니다.");
+                        _pptApp = new Application();
+                        Console.WriteLine("새 PowerPoint 애플리케이션 생성 성공");
 
-                    // 클립보드 형식 확인
-                    var dataFormats = Forms.Clipboard.GetDataObject()?.GetFormats();
-                    if (dataFormats != null)
-                    {
-                        Console.WriteLine("클립보드에 있는 데이터 형식:");
-                        foreach (var format in dataFormats)
+                        if (!string.IsNullOrEmpty(_filePath))
                         {
-                            Console.WriteLine($"- {format}");
+                            Console.WriteLine($"파일 열기 시도: {_filePath}");
+                            _presentation = _pptApp.Presentations.Open(_filePath);
+                            Console.WriteLine("파일 열기 성공");
                         }
                     }
-
-                    var styledTextBuilder = new StringBuilder();
-                    var styleAttributes = new Dictionary<string, object>();
-
-                    foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in shapes)
+                    else
                     {
-                        string shapeHtml = ConvertShapeToHtml(shape);
-                        styledTextBuilder.Append(shapeHtml);
+                        throw new InvalidOperationException("PowerPoint is not running");
                     }
+                }
 
-                    string selectedText = styledTextBuilder.ToString();
-                    string lineNumber = $"Slide {_slide.SlideIndex}";
+                if (_presentation == null)
+                {
+                    Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+                
+                Console.WriteLine($"활성 프레젠테이션 정보:");
+                Console.WriteLine($"- 프레젠테이션 이름: {_presentation.Name}");
+                Console.WriteLine($"- 전체 경로: {_presentation.FullName}");
+                Console.WriteLine($"- 저장 여부: {(_presentation.Saved == MsoTriState.msoTrue ? "저장됨" : "저장되지 않음")}");
+                Console.WriteLine($"- 읽기 전용: {(_presentation.ReadOnly == MsoTriState.msoTrue ? "예" : "아니오")}");
 
-                    // test.html 파일 업데이트
-                    try
+                _slide = _pptApp.ActiveWindow?.View?.Slide;
+                if (_slide == null)
+                {
+                    Console.WriteLine("활성 슬라이드를 찾을 수 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+
+                if(_isTargetProg)
+                {
+                    Console.WriteLine("전체 슬라이드 선택");
+                    try 
                     {
-                        string htmlTemplate = @"<!DOCTYPE html>
+                        // PowerPoint를 일시적으로 보이게 설정
+                        bool originalVisible = _pptApp.Visible == MsoTriState.msoTrue;
+                        _pptApp.Visible = MsoTriState.msoTrue;
+                        
+                        // 전체 슬라이드 순회
+                        foreach (Slide slide in _presentation.Slides)
+                        {
+                            _slide = slide;
+                            var allShapes = _slide.Shapes.Range();
+                            Console.WriteLine($"슬라이드 {_slide.SlideIndex} 선택 완료");
+                            
+                            // 슬라이드 시작 div 추가
+                            styledTextBuilder.Append($"<div class='Slide{_slide.SlideIndex}'>");
+                            
+                            foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in allShapes)
+                            {
+                                string shapeHtml = ConvertShapeToHtml(shape);
+                                styledTextBuilder.Append(shapeHtml);
+                            }
+                            
+                            // 슬라이드 종료 div
+                            styledTextBuilder.Append("</div>");
+                        }
+
+                        selectedText = styledTextBuilder.ToString();
+                        lineNumber = $"All Slides ({_presentation.Slides.Count} slides)";
+
+                        // 원래 상태로 복원
+                        _pptApp.Visible = originalVisible ? MsoTriState.msoTrue : MsoTriState.msoFalse;
+
+                        // test.html 파일 업데이트
+                        try
+                        {
+                            string htmlTemplate = @"<!DOCTYPE html>
 <html lang=""en"">
 <head>
     <meta charset=""UTF-8"">
@@ -600,30 +742,95 @@ namespace overlay_gpt
 </body>
 </html>";
 
-                        string fullHtml = string.Format(htmlTemplate, selectedText, selectedText.Length);
-                        File.WriteAllText("test.html", fullHtml);
-                        Console.WriteLine("test.html 파일이 성공적으로 업데이트되었습니다.");
+                            string fullHtml = string.Format(htmlTemplate, selectedText, selectedText.Length);
+                            File.WriteAllText("test.html", fullHtml);
+                            Console.WriteLine("test.html 파일이 성공적으로 업데이트되었습니다.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
+                        }
+
+                        return (selectedText, styleAttributes, lineNumber);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
+                        Console.WriteLine($"전체 슬라이드 선택 중 오류 발생: {ex.Message}");
+                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
+                }
 
-                    // 로그 윈도우의 컨텍스트 텍스트박스 업데이트
-                    LogWindow.Instance.Dispatcher.Invoke(() =>
+                Microsoft.Office.Interop.PowerPoint.ShapeRange? shapes;
+                if (readAllContent)
+                {
+                    shapes = _slide.Shapes.Range();
+                }
+                else
+                {
+                    shapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
+                }
+
+                if (shapes == null)
+                {
+                    Console.WriteLine("선택된 텍스트가 없습니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+
+                // 클립보드 형식 확인
+                var dataFormats = Forms.Clipboard.GetDataObject()?.GetFormats();
+                if (dataFormats != null)
+                {
+                    Console.WriteLine("클립보드에 있는 데이터 형식:");
+                    foreach (var format in dataFormats)
                     {
-                        LogWindow.Instance.FilePathTextBox.Text = _presentation.FullName;
-                        LogWindow.Instance.PositionTextBox.Text = lineNumber;
-                        LogWindow.Instance.ContextTextBox.Text = selectedText;
-                    });
+                        Console.WriteLine($"- {format}");
+                    }
+                }
 
-                    return (selectedText, styleAttributes, lineNumber);
+                foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in shapes)
+                {
+                    string shapeHtml = ConvertShapeToHtml(shape);
+                    styledTextBuilder.Append(shapeHtml);
+                }
+
+                selectedText = styledTextBuilder.ToString();
+                // HTML 단순화 적용
+                lineNumber = $"Slide {_slide.SlideIndex}";
+
+                // test.html 파일 업데이트
+                try
+                {
+                    string htmlTemplate = @"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>텍스트 길이: {1}자</title>
+</head>
+<body>
+{0}
+</body>
+</html>";
+
+                    string fullHtml = string.Format(htmlTemplate, selectedText, selectedText.Length);
+                    File.WriteAllText("test.html", fullHtml);
+                    Console.WriteLine("test.html 파일이 성공적으로 업데이트되었습니다.");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"PowerPoint COM 연결 오류: {ex.Message}");
-                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
                 }
+
+                // 로그 윈도우의 컨텍스트 텍스트박스 업데이트
+                LogWindow.Instance.Dispatcher.Invoke(() =>
+                {
+                    LogWindow.Instance.FilePathTextBox.Text = _presentation.FullName;
+                    LogWindow.Instance.PositionTextBox.Text = lineNumber;
+                    LogWindow.Instance.ContextTextBox.Text = selectedText;
+                });
+
+                return (selectedText, styleAttributes, lineNumber);
             }
             catch (Exception ex)
             {
@@ -642,28 +849,100 @@ namespace overlay_gpt
 
         public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
         {
+            Application? tempPptApp = null;
+            Presentation? tempPresentation = null;
+            
             try
             {
-                if (_presentation == null)
+                Console.WriteLine("PowerPoint COM 객체 가져오기 시도...");
+                tempPptApp = (Application)GetActiveObject("PowerPoint.Application");
+                Console.WriteLine("PowerPoint COM 객체 가져오기 성공");
+
+                if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
+                {
+                    // 이미 열려있는 프레젠테이션 확인
+                    foreach (Presentation pres in tempPptApp.Presentations)
+                    {
+                        if (pres.FullName.Equals(_filePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            tempPresentation = pres;
+                            Console.WriteLine("이미 열려있는 PowerPoint 파일을 사용합니다.");
+                            break;
+                        }
+                    }
+
+                    if (tempPresentation == null)
+                    {
+                        Console.WriteLine($"파일 열기 시도: {_filePath}");
+                        tempPresentation = tempPptApp.Presentations.Open(_filePath);
+                        Console.WriteLine("파일 열기 성공");
+                    }
+                }
+                else
+                {
+                    tempPresentation = tempPptApp.ActivePresentation;
+                }
+                
+                if (tempPresentation == null)
+                {
+                    Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
                     return (null, null, "PowerPoint", string.Empty, string.Empty);
+                }
 
-                string filePath = _presentation.FullName;
+                string filePath = tempPresentation.FullName;
+                string fileName = tempPresentation.Name;
+                
+                Console.WriteLine($"PowerPoint 문서 정보:");
+                Console.WriteLine($"- 파일 경로: {filePath}");
+                Console.WriteLine($"- 파일 이름: {fileName}");
+                
                 if (string.IsNullOrEmpty(filePath))
-                    return (null, null, "PowerPoint", _presentation.Name, string.Empty);
-
+                {
+                    Console.WriteLine("파일 경로가 비어있습니다.");
+                    return (null, null, "PowerPoint", fileName, string.Empty);
+                }
+                
+                // filePath가 비어있지 않을 때 일치 여부 체크
+                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
+                {
+                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
+                        return (null, null, "PowerPoint", string.Empty, string.Empty);
+                    }
+                }
+                
                 var fileIdInfo = GetFileId(filePath);
+                
+                if (fileIdInfo == null)
+                {
+                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                }
+                else
+                {
+                    Console.WriteLine($"파일 ID 정보:");
+                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                }
+                
                 return (
                     fileIdInfo?.FileId,
                     fileIdInfo?.VolumeId,
                     "PowerPoint",
-                    _presentation.Name,
+                    fileName,
                     filePath
                 );
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"파일 정보 가져오기 오류: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 return (null, null, "PowerPoint", string.Empty, string.Empty);
+            }
+            finally
+            {
+                if (tempPresentation != null) Marshal.ReleaseComObject(tempPresentation);
+                if (tempPptApp != null) Marshal.ReleaseComObject(tempPptApp);
             }
         }
     }
