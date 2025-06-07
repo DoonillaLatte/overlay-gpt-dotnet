@@ -68,6 +68,21 @@ namespace overlay_gpt
                     if(_pptApp != null)
                     {
                         Console.WriteLine("기존 PowerPoint 애플리케이션 찾음");
+                        
+                        // 현재 열려있는 모든 프레젠테이션 확인
+                        foreach (Presentation presentation in _pptApp.Presentations)
+                        {
+                            if (presentation.FullName.Equals(filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                Console.WriteLine("일치하는 프레젠테이션을 찾았습니다.");
+                                _presentation = presentation;
+                                _slide = _pptApp.ActiveWindow?.View?.Slide;
+                                return true;
+                            }
+                        }
+
+                        // 일치하는 프레젠테이션이 없으면 새로 열기
+                        Console.WriteLine("일치하는 프레젠테이션을 찾지 못했습니다. 새로 열기를 시도합니다.");
                         _presentation = _pptApp.Presentations.Open(filePath);
                         _slide = _pptApp.ActiveWindow?.View?.Slide;
                         return true;
@@ -108,24 +123,27 @@ namespace overlay_gpt
                 var slideNumber = int.Parse(lineNumber.Replace("Slide ", ""));
                 Console.WriteLine($"슬라이드 번호: {slideNumber}");
 
+                // 슬라이드의 모든 객체 삭제
+                Console.WriteLine("슬라이드의 모든 객체 삭제 시작...");
+                while (_slide.Shapes.Count > 0)
+                {
+                    try
+                    {
+                        _slide.Shapes[1].Delete();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"객체 삭제 중 오류 발생: {ex.Message}");
+                        break;
+                    }
+                }
+                Console.WriteLine("슬라이드의 모든 객체 삭제 완료");
+
                 // HTML 태그 처리
                 Console.WriteLine("HTML 파싱 시작...");
                 var htmlDoc = new HtmlAgilityPack.HtmlDocument();
                 htmlDoc.LoadHtml(text);
                 Console.WriteLine($"HTML 노드 수: {htmlDoc.DocumentNode.ChildNodes.Count}");
-
-                // 기존 도형 삭제
-                foreach (Microsoft.Office.Interop.PowerPoint.Shape shape in _slide.Shapes)
-                {
-                    try
-                    {
-                        shape.Delete();
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"도형 삭제 중 오류 발생: {ex.Message}");
-                    }
-                }
 
                 // HTML 노드 처리
                 foreach (var node in htmlDoc.DocumentNode.ChildNodes)
@@ -278,8 +296,12 @@ namespace overlay_gpt
                                 if (borderParts.Length >= 3)
                                 {
                                     shape.Line.Weight = float.Parse(borderParts[0].Replace("px", ""));
-                                    var borderColor = int.Parse(borderParts[2].Replace("#", ""), System.Globalization.NumberStyles.HexNumber);
-                                    shape.Line.ForeColor.RGB = ConvertColorToRGB(borderColor);
+                                    var borderColor = borderParts[2].Replace("#", "");
+                                    if (!string.IsNullOrEmpty(borderColor))
+                                    {
+                                        var rgb = int.Parse(borderColor, System.Globalization.NumberStyles.HexNumber);
+                                        shape.Line.ForeColor.RGB = ConvertColorToRGB(rgb);
+                                    }
                                 }
                             }
 

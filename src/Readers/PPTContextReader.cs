@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.IO;
+using Forms = System.Windows.Forms;
 
 namespace overlay_gpt
 {
@@ -185,6 +186,7 @@ namespace overlay_gpt
                 }
             }
 
+            // 전경색 (텍스트 색상)
             if (styleAttributes.ContainsKey("ForegroundColor"))
             {
                 int fgColor = Convert.ToInt32(styleAttributes["ForegroundColor"]);
@@ -193,6 +195,40 @@ namespace overlay_gpt
                     int rgbColor = ConvertColorToRGB(fgColor);
                     string hexColor = $"#{rgbColor:X6}";
                     styleList.Add($"color: {hexColor}");
+                }
+            }
+
+            // 배경색
+            if (styleAttributes.ContainsKey("BackgroundColor"))
+            {
+                int bgColor = Convert.ToInt32(styleAttributes["BackgroundColor"]);
+                if (bgColor != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(bgColor);
+                    double transparency = styleAttributes.ContainsKey("BackgroundTransparency") ? 
+                        Convert.ToDouble(styleAttributes["BackgroundTransparency"]) : 0.0;
+                    
+                    if (transparency < 1.0)
+                    {
+                        int r = (rgbColor >> 16) & 0xFF;
+                        int g = (rgbColor >> 8) & 0xFF;
+                        int b = rgbColor & 0xFF;
+                        styleList.Add($"background-color: rgba({r}, {g}, {b}, {1.0 - transparency})");
+                    }
+                }
+            }
+
+            // 하이라이트 색
+            if (styleAttributes.ContainsKey("HighlightColor"))
+            {
+                int highlightColor = Convert.ToInt32(styleAttributes["HighlightColor"]);
+                if (highlightColor != 0)
+                {
+                    int rgbColor = ConvertColorToRGB(highlightColor);
+                    int r = (rgbColor >> 16) & 0xFF;
+                    int g = (rgbColor >> 8) & 0xFF;
+                    int b = rgbColor & 0xFF;
+                    styleList.Add($"background-color: rgb({r}, {g}, {b})");
                 }
             }
 
@@ -265,13 +301,6 @@ namespace overlay_gpt
             }
 
             // 투명도
-            if (shape.Fill.Transparency > 0)
-            {
-                double opacity = 1 - (shape.Fill.Transparency / 100.0);
-                styleList.Add($"opacity: {opacity}");
-            }
-            
-            // 배경색 및 채우기
             if (shape.Fill.Visible == MsoTriState.msoTrue)
             {
                 if (shape.Fill.Type == MsoFillType.msoFillGradient)
@@ -294,8 +323,14 @@ namespace overlay_gpt
                 else if (shape.Fill.ForeColor.RGB != 0)
                 {
                     int rgbColor = ConvertColorToRGB(shape.Fill.ForeColor.RGB);
-                    string hexColor = $"#{rgbColor:X6}";
-                    styleList.Add($"background-color: {hexColor}");
+                    double transparency = shape.Fill.Transparency;
+                    if (transparency < 1.0)
+                    {
+                        int r = (rgbColor >> 16) & 0xFF;
+                        int g = (rgbColor >> 8) & 0xFF;
+                        int b = rgbColor & 0xFF;
+                        styleList.Add($"background-color: rgba({r}, {g}, {b}, {1.0 - transparency})");
+                    }
                 }
             }
             
@@ -387,6 +422,23 @@ namespace overlay_gpt
                 styleAttributes["FontItalic"] = textRange.Font.Italic;
                 styleAttributes["UnderlineStyle"] = textRange.Font.Underline;
                 styleAttributes["ForegroundColor"] = textRange.Font.Color.RGB;
+                
+                // Shape의 배경색 사용
+                if (shape.Fill.Visible == MsoTriState.msoTrue && shape.Fill.ForeColor.RGB != 0)
+                {
+                    styleAttributes["BackgroundColor"] = shape.Fill.ForeColor.RGB;
+                    styleAttributes["BackgroundTransparency"] = shape.Fill.Transparency;
+                }
+
+                // TextFrame2를 사용하여 하이라이트 색상 가져오기 (Office 2019+)
+                if (shape.HasTextFrame == MsoTriState.msoTrue && shape.TextFrame2.HasText == MsoTriState.msoTrue)
+                {
+                    var tr2 = shape.TextFrame2.TextRange;
+                    if (tr2.Font.Highlight.Type != MsoColorType.msoColorTypeMixed)
+                    {
+                        styleAttributes["HighlightColor"] = tr2.Font.Highlight.RGB;
+                    }
+                }
                 
                 // 텍스트 정렬 설정
                 switch (textRange.ParagraphFormat.Alignment)
@@ -510,6 +562,17 @@ namespace overlay_gpt
                         return (string.Empty, new Dictionary<string, object>(), string.Empty);
                     }
 
+                    // 클립보드 형식 확인
+                    var dataFormats = Forms.Clipboard.GetDataObject()?.GetFormats();
+                    if (dataFormats != null)
+                    {
+                        Console.WriteLine("클립보드에 있는 데이터 형식:");
+                        foreach (var format in dataFormats)
+                        {
+                            Console.WriteLine($"- {format}");
+                        }
+                    }
+
                     var styledTextBuilder = new StringBuilder();
                     var styleAttributes = new Dictionary<string, object>();
 
@@ -521,6 +584,38 @@ namespace overlay_gpt
 
                     string selectedText = styledTextBuilder.ToString();
                     string lineNumber = $"Slide {_slide.SlideIndex}";
+
+                    // test.html 파일 업데이트
+                    try
+                    {
+                        string htmlTemplate = @"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>텍스트 길이: {1}자</title>
+</head>
+<body>
+{0}
+</body>
+</html>";
+
+                        string fullHtml = string.Format(htmlTemplate, selectedText, selectedText.Length);
+                        File.WriteAllText("test.html", fullHtml);
+                        Console.WriteLine("test.html 파일이 성공적으로 업데이트되었습니다.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"test.html 파일 업데이트 실패: {ex.Message}");
+                    }
+
+                    // 로그 윈도우의 컨텍스트 텍스트박스 업데이트
+                    LogWindow.Instance.Dispatcher.Invoke(() =>
+                    {
+                        LogWindow.Instance.FilePathTextBox.Text = _presentation.FullName;
+                        LogWindow.Instance.PositionTextBox.Text = lineNumber;
+                        LogWindow.Instance.ContextTextBox.Text = selectedText;
+                    });
 
                     return (selectedText, styleAttributes, lineNumber);
                 }
