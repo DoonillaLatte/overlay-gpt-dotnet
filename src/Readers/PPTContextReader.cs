@@ -24,6 +24,9 @@ namespace overlay_gpt
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
 
@@ -595,6 +598,33 @@ namespace overlay_gpt
             return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
         }
 
+        private bool IsPowerPointProcessActive()
+        {
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero)
+                {
+                    Console.WriteLine("포커스된 창을 찾을 수 없습니다.");
+                    return false;
+                }
+
+                uint processId;
+                GetWindowThreadProcessId(foregroundWindow, out processId);
+
+                Process foregroundProcess = Process.GetProcessById((int)processId);
+                Console.WriteLine($"현재 포커스된 프로세스: {foregroundProcess.ProcessName} (PID: {processId})");
+
+                // PowerPoint 프로세스 이름 확인 (POWERPNT.EXE)
+                return foregroundProcess.ProcessName.Equals("POWERPNT", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"프로세스 확인 중 오류 발생: {ex.Message}");
+                return false;
+            }
+        }
+
         public PPTContextReader(bool isTargetProg = false, string filePath = "")
         {
             Console.WriteLine($"PPTContextReader 생성 시도 - isTargetProg: {isTargetProg}");
@@ -614,6 +644,13 @@ namespace overlay_gpt
                 Console.WriteLine("PowerPoint 데이터 읽기 시작...");
                 Console.WriteLine($"readAllContent: {readAllContent}");
                 Console.WriteLine($"isTargetProg: {_isTargetProg}");
+
+                // 현재 포커스된 프로세스가 PowerPoint인지 확인
+                if (!IsPowerPointProcessActive())
+                {
+                    Console.WriteLine("현재 포커스된 프로세스가 PowerPoint가 아닙니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
 
                 var pptProcesses = Process.GetProcessesByName("POWERPNT");
                 Console.WriteLine($"실행 중인 PowerPoint 프로세스 수: {pptProcesses.Length}");

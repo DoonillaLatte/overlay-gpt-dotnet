@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using System.IO;
 using System.Text;
+using System.Diagnostics;
 
 namespace overlay_gpt
 {
@@ -53,11 +54,51 @@ namespace overlay_gpt
             return styles;
         }
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        private bool IsExcelProcessActive()
+        {
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero)
+                {
+                    Console.WriteLine("포커스된 창을 찾을 수 없습니다.");
+                    return false;
+                }
+
+                uint processId;
+                GetWindowThreadProcessId(foregroundWindow, out processId);
+
+                Process foregroundProcess = Process.GetProcessById((int)processId);
+                Console.WriteLine($"현재 포커스된 프로세스: {foregroundProcess.ProcessName} (PID: {processId})");
+
+                // Excel 프로세스 이름 확인 (EXCEL.EXE)
+                return foregroundProcess.ProcessName.Equals("EXCEL", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"프로세스 확인 중 오류 발생: {ex.Message}");
+                return false;
+            }
+        }
+
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
             try
             {
                 Console.WriteLine("Excel 데이터 읽기 시작...");
+
+                // 현재 포커스된 프로세스가 Excel인지 확인
+                if (!IsExcelProcessActive())
+                {
+                    Console.WriteLine("현재 포커스된 프로세스가 Excel이 아닙니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
 
                 // Excel COM 객체 생성 시도
                 try

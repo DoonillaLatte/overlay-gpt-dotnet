@@ -31,6 +31,9 @@ namespace overlay_gpt
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr CreateFile(
             string lpFileName,
@@ -81,6 +84,33 @@ namespace overlay_gpt
         private const uint FILE_SHARE_READ = 0x00000001;
         private const uint FILE_SHARE_WRITE = 0x00000002;
         private const uint OPEN_EXISTING = 3;
+
+        private bool IsHwpProcessActive()
+        {
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero)
+                {
+                    _logger.LogWarning("포커스된 창을 찾을 수 없습니다.");
+                    return false;
+                }
+
+                uint processId;
+                GetWindowThreadProcessId(foregroundWindow, out processId);
+
+                Process foregroundProcess = Process.GetProcessById((int)processId);
+                _logger.LogInformation($"현재 포커스된 프로세스: {foregroundProcess.ProcessName} (PID: {processId})");
+
+                // 한글 프로세스 이름 확인 (Hwp.exe)
+                return foregroundProcess.ProcessName.Equals("Hwp", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"프로세스 확인 중 오류 발생: {ex.Message}");
+                return false;
+            }
+        }
 
         private (ulong FileId, uint VolumeId)? GetFileId(string filePath)
         {
@@ -257,6 +287,14 @@ namespace overlay_gpt
             try
             {
                 _logger.LogInformation("GetSelectedTextWithStyle 시작");
+
+                // 현재 포커스된 프로세스가 한글인지 확인
+                if (!IsHwpProcessActive())
+                {
+                    _logger.LogWarning("현재 포커스된 프로세스가 한글이 아닙니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
+
                 var hwpProcesses = Process.GetProcessesByName("Hwp");
                 _logger.LogInformation($"실행 중인 한글 프로세스 수: {hwpProcesses.Length}");
 

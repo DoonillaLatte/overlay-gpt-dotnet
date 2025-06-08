@@ -28,6 +28,9 @@ namespace overlay_gpt
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
         [DllImport("oleaut32.dll")]
         private static extern int GetActiveObject(ref Guid rclsid, IntPtr pvReserved, [MarshalAs(UnmanagedType.IUnknown)] out object ppunk);
 
@@ -151,11 +154,45 @@ namespace overlay_gpt
             return null;
         }
 
+        private bool IsWordProcessActive()
+        {
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero)
+                {
+                    Console.WriteLine("포커스된 창을 찾을 수 없습니다.");
+                    return false;
+                }
+
+                uint processId;
+                GetWindowThreadProcessId(foregroundWindow, out processId);
+
+                Process foregroundProcess = Process.GetProcessById((int)processId);
+                Console.WriteLine($"현재 포커스된 프로세스: {foregroundProcess.ProcessName} (PID: {processId})");
+
+                // Word 프로세스 이름 확인 (WINWORD.EXE)
+                return foregroundProcess.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"프로세스 확인 중 오류 발생: {ex.Message}");
+                return false;
+            }
+        }
+
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool includeStyle = true)
         {
             try
             {
                 Console.WriteLine("Word 데이터 읽기 시작...");
+
+                // 현재 포커스된 프로세스가 Word인지 확인
+                if (!IsWordProcessActive())
+                {
+                    Console.WriteLine("현재 포커스된 프로세스가 Word가 아닙니다.");
+                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                }
 
                 // Word COM 객체 생성 시도
                 try
