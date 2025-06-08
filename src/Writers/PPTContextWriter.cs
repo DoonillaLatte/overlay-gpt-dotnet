@@ -375,6 +375,34 @@ namespace overlay_gpt
                             }
                         }
                     }
+
+                    // 추가 슬라이드가 필요한 경우 새로 생성
+                    var maxSlideNumber = 0;
+                    foreach (var node in doc.DocumentNode.SelectNodes("//div[contains(@class, 'Slide')]"))
+                    {
+                        var className = node.Attributes["class"].Value;
+                        var slideNumber = int.Parse(className.Replace("Slide", ""));
+                        maxSlideNumber = Math.Max(maxSlideNumber, slideNumber);
+                    }
+
+                    while (_presentation.Slides.Count < maxSlideNumber)
+                    {
+                        _presentation.Slides.Add(_presentation.Slides.Count + 1, PpSlideLayout.ppLayoutBlank);
+                        var newSlide = _presentation.Slides[_presentation.Slides.Count];
+                        var newSlideDiv = doc.DocumentNode.SelectSingleNode($"//div[contains(@class, 'Slide{newSlide.SlideNumber}')]");
+                        
+                        if (newSlideDiv != null)
+                        {
+                            _slide = newSlide;
+                            foreach (var node in newSlideDiv.ChildNodes)
+                            {
+                                if (node.NodeType == HtmlNodeType.Element)
+                                {
+                                    ProcessHtmlNode(node);
+                                }
+                            }
+                        }
+                    }
                     return true;
                 }
 

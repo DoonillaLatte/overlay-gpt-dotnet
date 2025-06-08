@@ -128,7 +128,11 @@
                     <TextBox x:Name="FilePathTextBox" Margin="0,5"/>
                     
                     <TextBlock Text="선택 범위:" Margin="0,5"/>
-                    <TextBox x:Name="PositionTextBox" Margin="0,5" IsReadOnly="True"/>
+                    <TextBox x:Name="PositionTextBox" Margin="0,5">
+                        <TextBox.ToolTip>
+                            <TextBlock Text="선택 범위를 직접 입력하세요. 예: A1:B10"/>
+                        </TextBox.ToolTip>
+                    </TextBox>
                     
                     <TextBlock Text="컨텍스트 내용:" Margin="0,5"/>
                     <TextBox x:Name="ContextTextBox" Height="100" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,5"/>
