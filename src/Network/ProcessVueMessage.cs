@@ -209,50 +209,56 @@ namespace overlay_gpt.Network
 
         private async Task HandleApplyResponse(JObject data)
         {
-            // 해당 ChatID를 통해 데이터 가져오기
-            var chatData = ChatDataManager.Instance.GetChatDataById(data["chat_id"]?.Value<int>() ?? 0);
-            if (chatData == null)
-            {
-                throw new Exception("해당 ChatID를 통해 데이터를 가져오지 못했습니다.");
-            }
-            
-            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 채팅 데이터 정보:");
-            Console.WriteLine($"- ChatID: {chatData.ChatId}");
-            Console.WriteLine($"- 현재 프로그램: {chatData.CurrentProgram?.FileType} - {chatData.CurrentProgram?.FileName}");
-            Console.WriteLine($"- 대상 프로그램: {chatData.TargetProgram?.FileType} - {chatData.TargetProgram?.FileName}");
-            
-            ProgramInfo programToChange = null;
-            bool isTargetProg = false;
-            
-            // target_program이 null인지 확인
-            if (chatData.TargetProgram == null)
-            {
-                // null이라면 current_program에 생성된 context를 적용
-                programToChange = chatData.CurrentProgram;
-                Console.WriteLine("대상 프로그램이 null이므로 현재 프로그램에 적용합니다.");
-                isTargetProg = false;
-            }
-            else 
-            {
-                // null이 아니라면 target_program에 생성된 context를 적용
-                programToChange = chatData.TargetProgram;
-                Console.WriteLine("대상 프로그램에 적용합니다.");
-                isTargetProg = true;
-            }
-
-            string generatedContext = programToChange.GeneratedContext;
-            Console.WriteLine($"적용할 컨텍스트 길이: {generatedContext?.Length ?? 0} 문자");
-            Console.WriteLine($"적용할 위치: {programToChange.Position}");
-            
-            // 해당 프로그램에 적용
             try
             {
+                // 해당 ChatID를 통해 데이터 가져오기
+                var chatData = ChatDataManager.Instance.GetChatDataById(data["chat_id"]?.Value<int>() ?? 0);
+                if (chatData == null)
+                {
+                    throw new Exception("해당 ChatID를 통해 데이터를 가져오지 못했습니다.");
+                }
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 채팅 데이터 정보:");
+                Console.WriteLine($"- ChatID: {chatData.ChatId}");
+                Console.WriteLine($"- 현재 프로그램: {chatData.CurrentProgram?.FileType} - {chatData.CurrentProgram?.FileName}");
+                Console.WriteLine($"- 대상 프로그램: {chatData.TargetProgram?.FileType} - {chatData.TargetProgram?.FileName}");
+                
+                ProgramInfo programToChange = null;
+                bool isTargetProg = false;
+                
+                // target_program이 null인지 확인
+                if (chatData.TargetProgram == null)
+                {
+                    // null이라면 current_program에 생성된 context를 적용
+                    programToChange = chatData.CurrentProgram;
+                    Console.WriteLine("대상 프로그램이 null이므로 현재 프로그램에 적용합니다.");
+                    isTargetProg = false;
+                }
+                else 
+                {
+                    // null이 아니라면 target_program에 생성된 context를 적용
+                    programToChange = chatData.TargetProgram;
+                    Console.WriteLine("대상 프로그램에 적용합니다.");
+                    isTargetProg = true;
+                }
+
+                string generatedContext = programToChange.GeneratedContext;
+                Console.WriteLine($"적용할 컨텍스트 길이: {generatedContext?.Length ?? 0} 문자");
+                Console.WriteLine($"적용할 위치: {programToChange.Position}");
+                
+                // 해당 프로그램에 적용
                 await Task.Run(() =>
                 {
                     var thread = new Thread(() =>
                     {
                         try
                         {
+                            // 한글 프로세스 실행 여부 확인
+                            if (programToChange.FileType == "Hwp" && Process.GetProcessesByName("Hwp").Length == 0)
+                            {
+                                throw new Exception("한글(HWP)이 실행되어 있지 않습니다. 한글을 실행한 후 다시 시도해주세요.");
+                            }
+
                             var writer = ContextWriterFactory.CreateWriter(programToChange.FileType);
                             
                             if (writer == null)
@@ -273,7 +279,7 @@ namespace overlay_gpt.Network
                             Console.WriteLine($"파일 열기 시도: {programToChange.FilePath}");
                             if (!writer.OpenFile(programToChange.FilePath))
                             {
-                                throw new Exception("파일을 열 수 없습니다.");
+                                throw new Exception("파일을 열 수 없습니다. 파일이 존재하는지 확인해주세요.");
                             }
                             Console.WriteLine("파일 열기 성공");
 
@@ -308,6 +314,8 @@ namespace overlay_gpt.Network
                     thread.Start();
                     thread.Join();
                 });
+
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -320,8 +328,6 @@ namespace overlay_gpt.Network
                 }
                 throw;
             }
-
-            await Task.CompletedTask;
         }
 
         private async Task HandleCancelResponse(JObject data)
