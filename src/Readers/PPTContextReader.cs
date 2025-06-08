@@ -591,8 +591,41 @@ namespace overlay_gpt
             }
             else if (shape.Type == MsoShapeType.msoPicture)
             {
-                content = $"<img src='data:image/png;base64,...' alt='Image' />";
-                return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
+                try
+                {
+                    // 이미지 저장 디렉토리 생성
+                    string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                    if (!Directory.Exists(imageDir))
+                    {
+                        Directory.CreateDirectory(imageDir);
+                    }
+
+                    // 임시 파일로 이미지 저장
+                    string tempFile = Path.GetTempFileName() + ".png";
+                    shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                    
+                    // 이미지를 바이트 배열로 읽기
+                    byte[] imageBytes = File.ReadAllBytes(tempFile);
+                    
+                    // 고유한 이미지 ID 생성
+                    string imageId = Guid.NewGuid().ToString();
+                    string imagePath = Path.Combine(imageDir, $"{imageId}.png");
+
+                    // 이미지 데이터를 파일로 저장
+                    File.WriteAllBytes(imagePath, imageBytes);
+                    
+                    // 임시 파일 삭제
+                    File.Delete(tempFile);
+                    
+                    // 절대 경로로 이미지 참조
+                    string absolutePath = Path.GetFullPath(imagePath);
+                    return $"<img style='{styleString}' src='{absolutePath}' alt='Image' />";
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"이미지 변환 중 오류 발생: {ex.Message}");
+                    return $"<img style='{styleString}' src='' alt='Image' />";
+                }
             }
 
             return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";

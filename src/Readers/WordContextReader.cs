@@ -698,8 +698,9 @@ namespace overlay_gpt
                                 byte[] imageBytes = Convert.FromBase64String(imageData);
                                 File.WriteAllBytes(imagePath, imageBytes);
 
-                                // HTML에서는 상대 경로로 참조
-                                img.SetAttributeValue("src", $"images/{imageId}.jpg");
+                                // 절대 경로로 이미지 참조
+                                string absolutePath = Path.GetFullPath(imagePath);
+                                img.SetAttributeValue("src", absolutePath);
                             }
                         }
                         catch (Exception ex)

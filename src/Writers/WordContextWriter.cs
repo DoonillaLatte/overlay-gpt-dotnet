@@ -4,6 +4,7 @@ using Microsoft.Office.Interop.Word;
 using WordApp = Microsoft.Office.Interop.Word.Application;
 using System.Diagnostics;
 using System.IO;
+using HtmlAgilityPack;
 
 namespace overlay_gpt
 {
@@ -104,7 +105,7 @@ namespace overlay_gpt
     </style>
 </head>
 <body>
-    <div>{htmlText}</div>
+    <div>{ProcessImagesInHtml(htmlText)}</div>
 </body>
 </html>";
 
@@ -279,6 +280,48 @@ namespace overlay_gpt
             {
                 Marshal.ReleaseComObject(_wordApp);
                 _wordApp = null;
+            }
+        }
+
+        private string ProcessImagesInHtml(string html)
+        {
+            try
+            {
+                var doc = new HtmlDocument();
+                doc.LoadHtml(html);
+
+                // 모든 이미지 태그 찾기
+                var images = doc.DocumentNode.SelectNodes("//img");
+                if (images != null)
+                {
+                    foreach (var img in images)
+                    {
+                        var src = img.GetAttributeValue("src", "");
+                        if (!string.IsNullOrEmpty(src))
+                        {
+                            // 이미지 파일 경로 생성
+                            string imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, src);
+                            if (File.Exists(imagePath))
+                            {
+                                // 절대 경로로 변환
+                                string absolutePath = Path.GetFullPath(imagePath);
+                                img.SetAttributeValue("src", absolutePath);
+                                Console.WriteLine($"이미지 경로 변환: {src} -> {absolutePath}");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"이미지 파일을 찾을 수 없습니다: {imagePath}");
+                            }
+                        }
+                    }
+                }
+
+                return doc.DocumentNode.InnerHtml;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"이미지 처리 중 오류 발생: {ex.Message}");
+                return html;
             }
         }
     }

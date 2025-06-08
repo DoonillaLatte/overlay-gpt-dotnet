@@ -414,12 +414,22 @@ namespace overlay_gpt
                 }
 
                 // 슬라이드 번호 처리
-                if (lineNumber.StartsWith("Slide: "))
+                if (lineNumber.StartsWith("Slide "))
                 {
-                    int slideNumber = int.Parse(lineNumber.Replace("Slide: ", ""));
-                    if (slideNumber > 0 && slideNumber <= _presentation.Slides.Count)
+                    int slideNumber = int.Parse(lineNumber.Replace("Slide ", ""));
+                    if (slideNumber > 0)
                     {
+                        // 필요한 만큼 슬라이드 생성
+                        while (_presentation.Slides.Count < slideNumber)
+                        {
+                            _presentation.Slides.Add(_presentation.Slides.Count + 1, PpSlideLayout.ppLayoutBlank);
+                        }
                         _slide = _presentation.Slides[slideNumber];
+                    }
+                    else
+                    {
+                        Console.WriteLine($"슬라이드 번호가 유효하지 않습니다: {slideNumber}");
+                        return false;
                     }
                 }
 
@@ -453,6 +463,71 @@ namespace overlay_gpt
 
         private void ProcessHtmlNode(HtmlNode node)
         {
+            if (node.Name.ToLower() == "img")
+            {
+                try
+                {
+                    // 이미지 스타일 파싱
+                    var style = node.Attributes["style"]?.Value ?? "";
+                    var styleDict = new Dictionary<string, string>();
+                    foreach (var stylePart in style.Split(';'))
+                    {
+                        var parts = stylePart.Split(':');
+                        if (parts.Length == 2)
+                        {
+                            styleDict[parts[0].Trim()] = parts[1].Trim();
+                        }
+                    }
+
+                    // 이미지 소스 가져오기
+                    var src = node.Attributes["src"]?.Value;
+                    if (string.IsNullOrEmpty(src))
+                    {
+                        Console.WriteLine("이미지 소스가 없습니다.");
+                        return;
+                    }
+
+                    // 이미지 파일 경로 생성
+                    string imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, src);
+                    if (!File.Exists(imagePath))
+                    {
+                        Console.WriteLine($"이미지 파일을 찾을 수 없습니다: {imagePath}");
+                        return;
+                    }
+
+                    // 이미지 추가
+                    var shape = _slide.Shapes.AddPicture(
+                        imagePath,
+                        MsoTriState.msoFalse,
+                        MsoTriState.msoTrue,
+                        0, 0);
+
+                    // 스타일 적용
+                    if (styleDict.ContainsKey("left"))
+                        shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
+                    if (styleDict.ContainsKey("top"))
+                        shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
+                    if (styleDict.ContainsKey("width"))
+                        shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
+                    if (styleDict.ContainsKey("height"))
+                        shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
+                    if (styleDict.ContainsKey("z-index"))
+                    {
+                        var zIndex = int.Parse(styleDict["z-index"]);
+                        shape.ZOrder(MsoZOrderCmd.msoBringToFront);
+                        for (int i = 0; i < zIndex; i++)
+                        {
+                            shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"이미지 처리 오류: {ex.Message}");
+                }
+                return;
+            }
+
             if (node.Name.ToLower() == "div")
             {
                 var shape = _slide.Shapes.AddShape(
