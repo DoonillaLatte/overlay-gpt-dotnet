@@ -205,15 +205,41 @@ namespace overlay_gpt
                         Console.WriteLine("기존 Word 애플리케이션 찾음");
                         Console.WriteLine($"Word 버전: {_wordApp.Version}");
                         Console.WriteLine($"활성 문서 수: {_wordApp.Documents.Count}");
-                        
-                        // 활성 문서 가져오기
-                        _document = _wordApp.ActiveDocument;
-                        if (_document == null)
+
+                        if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                         {
-                            Console.WriteLine("활성 문서를 찾을 수 없습니다.");
-                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                            // 기존 프로세스에서 원하는 파일 찾기
+                            bool found = false;
+                            foreach (Document doc in _wordApp.Documents)
+                            {
+                                if (string.Equals(doc.FullName, _filePath, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    Console.WriteLine($"기존 프로세스에서 파일 찾음: {_filePath}");
+                                    _document = doc;
+                                    found = true;
+                                    break;
+                                }
+                            }
+
+                            // 파일을 찾지 못했다면 새로 열기
+                            if (!found)
+                            {
+                                Console.WriteLine($"기존 프로세스에서 파일을 찾지 못해 새로 열기 시도: {_filePath}");
+                                _document = _wordApp.Documents.Open(_filePath);
+                                Console.WriteLine("파일 열기 성공");
+                            }
                         }
-                        Console.WriteLine($"활성 문서 이름: {_document.Name}");
+                        else
+                        {
+                            // 활성 문서 가져오기
+                            _document = _wordApp.ActiveDocument;
+                            if (_document == null)
+                            {
+                                Console.WriteLine("활성 문서를 찾을 수 없습니다.");
+                                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                            }
+                            Console.WriteLine($"활성 문서 이름: {_document.Name}");
+                        }
                     }
                     else 
                     {
@@ -737,58 +763,95 @@ namespace overlay_gpt
                 tempWordApp = (WordApp)GetActiveObject("Word.Application");
                 Console.WriteLine("Word COM 객체 가져오기 성공");
 
-                Console.WriteLine("활성 문서 가져오기 시도...");
-                tempDocument = tempWordApp.ActiveDocument;
-                
-                if (tempDocument == null)
+                if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                 {
-                    Console.WriteLine("활성 문서를 찾을 수 없습니다.");
-                    return (null, null, "Word", string.Empty, string.Empty);
-                }
-
-                string filePath = tempDocument.FullName;
-                string fileName = tempDocument.Name;
-                
-                Console.WriteLine($"Word 문서 정보:");
-                Console.WriteLine($"- 파일 경로: {filePath}");
-                Console.WriteLine($"- 파일 이름: {fileName}");
-                
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    Console.WriteLine("파일 경로가 비어있습니다.");
-                    return (null, null, "Word", fileName, string.Empty);
-                }
-                
-                // filePath가 비어있지 않을 때 일치 여부 체크
-                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
-                {
-                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    // 모든 문서 확인
+                    foreach (Document doc in tempWordApp.Documents)
                     {
-                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
-                        return (null, null, "Word", string.Empty, string.Empty);
+                        try
+                        {
+                            string filePath = doc.FullName;
+                            string fileName = doc.Name;
+                            
+                            Console.WriteLine($"Word 문서 정보:");
+                            Console.WriteLine($"- 파일 경로: {filePath}");
+                            Console.WriteLine($"- 파일 이름: {fileName}");
+                            
+                            if (string.IsNullOrEmpty(filePath))
+                            {
+                                Console.WriteLine("파일 경로가 비어있습니다.");
+                                continue;
+                            }
+                            
+                            if (string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var fileIdInfo = GetFileId(filePath);
+                                
+                                if (fileIdInfo == null)
+                                {
+                                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"파일 ID 정보:");
+                                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                                }
+                                
+                                return (
+                                    fileIdInfo?.FileId,
+                                    fileIdInfo?.VolumeId,
+                                    "Word",
+                                    fileName,
+                                    filePath
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"문서 처리 중 오류: {ex.Message}");
+                            continue;
+                        }
                     }
-                }
-                
-                var fileIdInfo = GetFileId(filePath);
-                
-                if (fileIdInfo == null)
-                {
-                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
                 }
                 else
                 {
-                    Console.WriteLine($"파일 ID 정보:");
-                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
-                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                    // 활성 문서 정보 가져오기
+                    tempDocument = tempWordApp.ActiveDocument;
+                    if (tempDocument != null)
+                    {
+                        string filePath = tempDocument.FullName;
+                        string fileName = tempDocument.Name;
+                        
+                        Console.WriteLine($"활성 Word 문서 정보:");
+                        Console.WriteLine($"- 파일 경로: {filePath}");
+                        Console.WriteLine($"- 파일 이름: {fileName}");
+                        
+                        var fileIdInfo = GetFileId(filePath);
+                        
+                        if (fileIdInfo == null)
+                        {
+                            Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"파일 ID 정보:");
+                            Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                            Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                        }
+                        
+                        return (
+                            fileIdInfo?.FileId,
+                            fileIdInfo?.VolumeId,
+                            "Word",
+                            fileName,
+                            filePath
+                        );
+                    }
                 }
                 
-                return (
-                    fileIdInfo?.FileId,
-                    fileIdInfo?.VolumeId,
-                    "Word",
-                    fileName,
-                    filePath
-                );
+                Console.WriteLine("문서를 찾을 수 없습니다.");
+                return (null, null, "Word", string.Empty, string.Empty);
             }
             catch (Exception ex)
             {

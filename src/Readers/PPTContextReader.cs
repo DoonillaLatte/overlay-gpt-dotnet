@@ -696,22 +696,23 @@ namespace overlay_gpt
 
                     if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                     {
-                        // 이미 열려있는 프레젠테이션 확인
-                        bool fileAlreadyOpen = false;
+                        // 기존 프로세스에서 원하는 파일 찾기
+                        bool found = false;
                         foreach (Presentation pres in _pptApp.Presentations)
                         {
-                            if (pres.FullName.Equals(_filePath, StringComparison.OrdinalIgnoreCase))
+                            if (string.Equals(pres.FullName, _filePath, StringComparison.OrdinalIgnoreCase))
                             {
+                                Console.WriteLine($"기존 프로세스에서 파일 찾음: {_filePath}");
                                 _presentation = pres;
-                                fileAlreadyOpen = true;
-                                Console.WriteLine("이미 열려있는 PowerPoint 파일을 사용합니다.");
+                                found = true;
                                 break;
                             }
                         }
 
-                        if (!fileAlreadyOpen)
+                        // 파일을 찾지 못했다면 새로 열기
+                        if (!found)
                         {
-                            Console.WriteLine($"파일 열기 시도: {_filePath}");
+                            Console.WriteLine($"기존 프로세스에서 파일을 찾지 못해 새로 열기 시도: {_filePath}");
                             _presentation = _pptApp.Presentations.Open(_filePath);
                             Console.WriteLine("파일 열기 성공");
                         }
@@ -727,14 +728,24 @@ namespace overlay_gpt
                     if (_isTargetProg)
                     {
                         Console.WriteLine("새 PowerPoint 프로세스를 생성합니다.");
-                        _pptApp = new Application();
-                        Console.WriteLine("새 PowerPoint 애플리케이션 생성 성공");
-
-                        if (!string.IsNullOrEmpty(_filePath))
+                        try
                         {
-                            Console.WriteLine($"파일 열기 시도: {_filePath}");
-                            _presentation = _pptApp.Presentations.Open(_filePath);
-                            Console.WriteLine("파일 열기 성공");
+                            _pptApp = new Application();
+                            Console.WriteLine("새 PowerPoint 애플리케이션 생성 성공");
+                            _pptApp.Visible = MsoTriState.msoFalse;  // PowerPoint 창을 안보이게 설정
+
+                            if (!string.IsNullOrEmpty(_filePath))
+                            {
+                                Console.WriteLine($"파일 열기 시도: {_filePath}");
+                                _presentation = _pptApp.Presentations.Open(_filePath);
+                                Console.WriteLine("파일 열기 성공");
+                            }
+                        }
+                        catch (Exception createEx)
+                        {
+                            Console.WriteLine($"새 PowerPoint 애플리케이션 생성 실패: {createEx.Message}");
+                            Console.WriteLine($"스택 트레이스: {createEx.StackTrace}");
+                            throw;
                         }
                     }
                     else
@@ -930,78 +941,93 @@ namespace overlay_gpt
 
                 if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                 {
-                    // 이미 열려있는 프레젠테이션 확인
+                    // 모든 프레젠테이션 확인
                     foreach (Presentation pres in tempPptApp.Presentations)
                     {
-                        if (pres.FullName.Equals(_filePath, StringComparison.OrdinalIgnoreCase))
+                        try
                         {
-                            tempPresentation = pres;
-                            Console.WriteLine("이미 열려있는 PowerPoint 파일을 사용합니다.");
-                            break;
+                            string filePath = pres.FullName;
+                            string fileName = pres.Name;
+                            
+                            Console.WriteLine($"PowerPoint 문서 정보:");
+                            Console.WriteLine($"- 파일 경로: {filePath}");
+                            Console.WriteLine($"- 파일 이름: {fileName}");
+                            
+                            if (string.IsNullOrEmpty(filePath))
+                            {
+                                Console.WriteLine("파일 경로가 비어있습니다.");
+                                continue;
+                            }
+                            
+                            if (string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var fileIdInfo = GetFileId(filePath);
+                                
+                                if (fileIdInfo == null)
+                                {
+                                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"파일 ID 정보:");
+                                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                                }
+                                
+                                return (
+                                    fileIdInfo?.FileId,
+                                    fileIdInfo?.VolumeId,
+                                    "PowerPoint",
+                                    fileName,
+                                    filePath
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"프레젠테이션 처리 중 오류: {ex.Message}");
+                            continue;
                         }
                     }
-
-                    if (tempPresentation == null)
-                    {
-                        Console.WriteLine($"파일 열기 시도: {_filePath}");
-                        tempPresentation = tempPptApp.Presentations.Open(_filePath);
-                        Console.WriteLine("파일 열기 성공");
-                    }
                 }
                 else
                 {
+                    // 활성 프레젠테이션 정보 가져오기
                     tempPresentation = tempPptApp.ActivePresentation;
-                }
-                
-                if (tempPresentation == null)
-                {
-                    Console.WriteLine("활성 프레젠테이션을 찾을 수 없습니다.");
-                    return (null, null, "PowerPoint", string.Empty, string.Empty);
-                }
-
-                string filePath = tempPresentation.FullName;
-                string fileName = tempPresentation.Name;
-                
-                Console.WriteLine($"PowerPoint 문서 정보:");
-                Console.WriteLine($"- 파일 경로: {filePath}");
-                Console.WriteLine($"- 파일 이름: {fileName}");
-                
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    Console.WriteLine("파일 경로가 비어있습니다.");
-                    return (null, null, "PowerPoint", fileName, string.Empty);
-                }
-                
-                // filePath가 비어있지 않을 때 일치 여부 체크
-                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
-                {
-                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    if (tempPresentation != null)
                     {
-                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
-                        return (null, null, "PowerPoint", string.Empty, string.Empty);
+                        string filePath = tempPresentation.FullName;
+                        string fileName = tempPresentation.Name;
+                        
+                        Console.WriteLine($"활성 PowerPoint 문서 정보:");
+                        Console.WriteLine($"- 파일 경로: {filePath}");
+                        Console.WriteLine($"- 파일 이름: {fileName}");
+                        
+                        var fileIdInfo = GetFileId(filePath);
+                        
+                        if (fileIdInfo == null)
+                        {
+                            Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"파일 ID 정보:");
+                            Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                            Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                        }
+                        
+                        return (
+                            fileIdInfo?.FileId,
+                            fileIdInfo?.VolumeId,
+                            "PowerPoint",
+                            fileName,
+                            filePath
+                        );
                     }
                 }
                 
-                var fileIdInfo = GetFileId(filePath);
-                
-                if (fileIdInfo == null)
-                {
-                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
-                }
-                else
-                {
-                    Console.WriteLine($"파일 ID 정보:");
-                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
-                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
-                }
-                
-                return (
-                    fileIdInfo?.FileId,
-                    fileIdInfo?.VolumeId,
-                    "PowerPoint",
-                    fileName,
-                    filePath
-                );
+                Console.WriteLine("문서를 찾을 수 없습니다.");
+                return (null, null, "PowerPoint", string.Empty, string.Empty);
             }
             catch (Exception ex)
             {
