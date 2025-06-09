@@ -37,6 +37,7 @@ namespace overlay_gpt.Network
                 { "ping", HandlePing },
                 { "generate_chat_id", HandleGenerateChatId },
                 { "apply_response", HandleApplyResponse },
+                { "apply_stored_response", HandleApplyStoredResponse },
                 { "cancel_response", HandleCancelResponse },
                 { "request_top_workflows", HandleRequestTopWorkflows },
                 { "select_workflow", HandleSelectWorkflow }
@@ -232,8 +233,14 @@ namespace overlay_gpt.Network
         {
             try
             {
+                // Vue에서 전송한 apply_content 확인
+                var applyContent = data["apply_content"]?.ToString();
+                var chatId = data["chat_id"]?.Value<int>() ?? 0;
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Vue에서 전송한 apply_content 길이: {applyContent?.Length ?? 0}");
+                
                 // 해당 ChatID를 통해 데이터 가져오기
-                var chatData = ChatDataManager.Instance.GetChatDataById(data["chat_id"]?.Value<int>() ?? 0);
+                var chatData = ChatDataManager.Instance.GetChatDataById(chatId);
                 if (chatData == null)
                 {
                     throw new Exception("해당 ChatID를 통해 데이터를 가져오지 못했습니다.");
@@ -275,11 +282,18 @@ namespace overlay_gpt.Network
                     throw new Exception("프로그램 타입이 지정되지 않았습니다.");
                 }
 
-                string generatedContext = programToChange.GeneratedContext;
-                Console.WriteLine($"적용할 컨텍스트 길이: {generatedContext?.Length ?? 0} 문자");
-                Console.WriteLine($"적용할 위치: {programToChange.Position}");
+                // Vue에서 전송한 원본 HTML이 있으면 사용, 없으면 기존 GeneratedContext 사용
+                string contextToApply = applyContent ?? programToChange.GeneratedContext;
                 
-                // 해당 프로그램에 적용
+                Console.WriteLine($"적용할 컨텍스트 길이: {contextToApply?.Length ?? 0} 문자");
+                Console.WriteLine($"적용할 위치: {programToChange.Position}");
+                Console.WriteLine($"사용된 컨텍스트 소스: {(applyContent != null ? "Vue 원본 HTML" : "기존 GeneratedContext")}");
+                
+                // 해당 프로그램에 적용 (변수를 미리 캡처)
+                var contextToApplyLocal = contextToApply;
+                var programToChangeLocal = programToChange;
+                var isTargetProgLocal = isTargetProg;
+                
                 await Task.Run(() =>
                 {
                     var thread = new Thread(() =>
@@ -287,40 +301,40 @@ namespace overlay_gpt.Network
                         try
                         {
                             // 한글 프로세스 실행 여부 확인
-                            if (programToChange.FileType == "Hwp" && Process.GetProcessesByName("Hwp").Length == 0)
+                            if (programToChangeLocal.FileType == "Hwp" && Process.GetProcessesByName("Hwp").Length == 0)
                             {
                                 throw new Exception("한글(HWP)이 실행되어 있지 않습니다. 한글을 실행한 후 다시 시도해주세요.");
                             }
 
-                            var writer = ContextWriterFactory.CreateWriter(programToChange.FileType);
+                            var writer = ContextWriterFactory.CreateWriter(programToChangeLocal.FileType);
                             
                             if (writer == null)
                             {
                                 throw new Exception("지원하지 않는 프로그램입니다.");
                             }
-                            Console.WriteLine($"Writer 생성 완료: {programToChange.FileType}");
+                            Console.WriteLine($"Writer 생성 완료: {programToChangeLocal.FileType}");
 
                             // 생성된 컨텍스트가 있는지 확인
-                            if (generatedContext == null)
+                            if (contextToApplyLocal == null)
                             {
                                 throw new Exception("적용할 컨텍스트가 없습니다.");
                             }
                             
-                            writer.IsTargetProg = isTargetProg;
+                            writer.IsTargetProg = isTargetProgLocal;
 
                             // 파일 열기 시도
-                            Console.WriteLine($"파일 열기 시도: {programToChange.FilePath}");
-                            if (!writer.OpenFile(programToChange.FilePath))
+                            Console.WriteLine($"파일 열기 시도: {programToChangeLocal.FilePath}");
+                            if (!writer.OpenFile(programToChangeLocal.FilePath))
                             {
                                 throw new Exception("파일을 열 수 없습니다. 파일이 존재하는지 확인해주세요.");
                             }
                             Console.WriteLine("파일 열기 성공");
 
                             // 컨텍스트 적용
-                            Console.WriteLine("컨텍스트 적용 시작...");
+                            Console.WriteLine($"컨텍스트 적용 시작... (길이: {contextToApplyLocal.Length})");
                             bool success = writer.ApplyTextWithStyle(
-                                generatedContext,
-                                programToChange.Position
+                                contextToApplyLocal,
+                                programToChangeLocal.Position
                             );
 
                             if (!success)
@@ -359,6 +373,129 @@ namespace overlay_gpt.Network
                     Console.WriteLine($"내부 예외: {ex.InnerException.Message}");
                     Console.WriteLine($"내부 예외 스택 트레이스: {ex.InnerException.StackTrace}");
                 }
+                throw;
+            }
+        }
+
+        private async Task HandleApplyStoredResponse(JObject data)
+        {
+            try
+            {
+                var chatId = data["chat_id"]?.Value<int>() ?? -1;
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] HandleApplyStoredResponse 시작 - ChatID: {chatId}");
+
+                // 해당 ChatID를 통해 데이터 가져오기
+                var chatData = ChatDataManager.Instance.GetChatDataById(chatId);
+                if (chatData == null)
+                {
+                    throw new Exception("해당 ChatID를 통해 데이터를 가져오지 못했습니다.");
+                }
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 채팅 데이터 정보:");
+                Console.WriteLine($"- ChatID: {chatData.ChatId}");
+                Console.WriteLine($"- 현재 프로그램: {chatData.CurrentProgram?.FileType} - {chatData.CurrentProgram?.FileName}");
+                Console.WriteLine($"- 대상 프로그램: {chatData.TargetProgram?.FileType} - {chatData.TargetProgram?.FileName}");
+                Console.WriteLine($"- 저장된 적용용 컨텍스트 길이: {chatData.DotnetApplyContext?.Length ?? 0}");
+                
+                // 적용할 프로그램과 컨텍스트 결정
+                ProgramInfo programToChange = null;
+                bool isTargetProg = chatData.TargetProgram != null;
+                
+                if (isTargetProg)
+                {
+                    programToChange = chatData.TargetProgram;
+                    Console.WriteLine("대상 프로그램에 적용합니다.");
+                }
+                else
+                {
+                    programToChange = chatData.CurrentProgram;
+                    Console.WriteLine("현재 프로그램에 적용합니다.");
+                }
+
+                if (programToChange == null)
+                {
+                    throw new Exception("적용할 프로그램을 찾을 수 없습니다.");
+                }
+
+                // 저장된 dotnet 적용용 컨텍스트 사용
+                var contextToApply = chatData.DotnetApplyContext;
+                if (string.IsNullOrEmpty(contextToApply))
+                {
+                    throw new Exception("적용할 컨텍스트가 없습니다.");
+                }
+
+                Console.WriteLine($"사용할 컨텍스트 길이: {contextToApply.Length}");
+                
+                // 변수를 미리 캡처 (Thread 클로저 문제 해결)
+                var contextToApplyLocal = contextToApply;
+                var programToChangeLocal = programToChange;
+                var isTargetProgLocal = isTargetProg;
+                
+                // 해당 프로그램에 적용
+                await Task.Run(() =>
+                {
+                    var thread = new Thread(() =>
+                    {
+                        try
+                        {
+                            // 한글 프로세스 실행 여부 확인
+                            if (programToChangeLocal.FileType == "Hwp" && Process.GetProcessesByName("Hwp").Length == 0)
+                            {
+                                throw new Exception("한글(HWP)이 실행되어 있지 않습니다. 한글을 실행한 후 다시 시도해주세요.");
+                            }
+
+                            var writer = ContextWriterFactory.CreateWriter(programToChangeLocal.FileType);
+                            
+                            if (writer == null)
+                            {
+                                throw new Exception("지원하지 않는 프로그램입니다.");
+                            }
+                            Console.WriteLine($"Writer 생성 완료: {programToChangeLocal.FileType}");
+
+                            writer.IsTargetProg = isTargetProgLocal;
+
+                            // 파일 열기 시도
+                            Console.WriteLine($"파일 열기 시도: {programToChangeLocal.FilePath}");
+                            if (!writer.OpenFile(programToChangeLocal.FilePath))
+                            {
+                                throw new Exception("파일을 열 수 없습니다. 파일이 존재하는지 확인해주세요.");
+                            }
+                            Console.WriteLine("파일 열기 성공");
+
+                            // 컨텍스트 적용
+                            Console.WriteLine($"저장된 컨텍스트 적용 시작... (길이: {contextToApplyLocal.Length})");
+                            bool success = writer.ApplyTextWithStyle(
+                                contextToApplyLocal,
+                                programToChangeLocal.Position
+                            );
+
+                            if (success)
+                            {
+                                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 저장된 컨텍스트 적용 성공!");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 저장된 컨텍스트 적용 실패");
+                                throw new Exception("컨텍스트 적용에 실패했습니다.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 적용 스레드 오류: {ex.Message}");
+                            throw;
+                        }
+                    });
+                    
+                    thread.SetApartmentState(ApartmentState.STA);
+                    thread.Start();
+                    thread.Join();
+                });
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] HandleApplyStoredResponse 완료");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] HandleApplyStoredResponse 오류: {ex.Message}");
                 throw;
             }
         }

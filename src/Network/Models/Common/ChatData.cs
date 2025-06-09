@@ -23,5 +23,11 @@ namespace overlay_gpt.Network.Models.Common
         [JsonProperty("texts")]
         [JsonPropertyName("texts")]
         public List<TextData> Texts { get; set; } = new();
+        
+        // Vue 표시용 정규화된 HTML (Vue에만 전송)
+        public string VueDisplayContext { get; set; } = string.Empty;
+        
+        // dotnet 적용용 원본 HTML (실제 적용에 사용)
+        public string DotnetApplyContext { get; set; } = string.Empty;
     }
 }

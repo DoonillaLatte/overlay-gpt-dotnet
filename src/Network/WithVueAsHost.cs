@@ -267,7 +267,7 @@ public class WithVueAsHost
                     services.AddSignalR(options =>
                     {
                         options.EnableDetailedErrors = true;
-                        options.MaximumReceiveMessageSize = 102400;
+                        options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10MB로 증가
                         options.KeepAliveInterval = TimeSpan.FromSeconds(30);
                         options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
                         options.HandshakeTimeout = TimeSpan.FromSeconds(30);

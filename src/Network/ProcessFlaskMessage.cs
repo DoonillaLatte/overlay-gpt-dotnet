@@ -131,7 +131,8 @@ namespace overlay_gpt.Network
                 { "update_content", HandleUpdateContent },
                 { "error", HandleError },
                 { "generated_response", HandleGeneratedResponse },
-                { "response_workflows", HandleResponseWorkflows }
+                { "response_workflows", HandleResponseWorkflows },
+                { "apply_response_result", HandleApplyResponseResult }
             };
             _fileFinder = new NtfsFileFinder();
         }
@@ -209,14 +210,19 @@ namespace overlay_gpt.Network
                 Console.WriteLine("HandleGeneratedResponse 시작");
                 var chatId = data["chat_id"]?.Value<int>() ?? -1;
                 var title = data["title"]?.ToString();
-                var message = data["message"]?.ToString();
+                var vueContent = data["vue_content"]?.ToString();        // Vue 표시용
+                var dotnetContent = data["dotnet_content"]?.ToString();  // dotnet 적용용
                 var status = data["status"]?.ToString();
 
-                Console.WriteLine($"받은 데이터 - chatId: {chatId}, message: {message}, status: {status}");
+                Console.WriteLine($"받은 데이터 - chatId: {chatId}, status: {status}");
+                Console.WriteLine($"Vue Content 길이: {vueContent?.Length ?? 0}, Dotnet Content 길이: {dotnetContent?.Length ?? 0}");
+
+                // 호환성을 위해 기존 message 필드도 확인
+                var message = vueContent ?? data["message"]?.ToString();
 
                 if (string.IsNullOrEmpty(message))
                 {
-                    Console.WriteLine("message가 비어있습니다.");
+                    Console.WriteLine("표시할 메시지가 비어있습니다.");
                     return;
                 }
 
@@ -236,12 +242,19 @@ namespace overlay_gpt.Network
                     chatData.Title = title;
                 }
                 chatData.Texts.Add(new TextData { Type = textType, Content = message });
+                
+                // 두 가지 컨텍스트 저장
+                chatData.VueDisplayContext = message;  // Vue 표시용
+                chatData.DotnetApplyContext = !string.IsNullOrEmpty(dotnetContent) ? dotnetContent : message;  // dotnet 적용용
+                
+                Console.WriteLine($"컨텍스트 저장 완료 - Vue용: {chatData.VueDisplayContext.Length}, dotnet용: {chatData.DotnetApplyContext.Length}");
+                
                 if(chatData.TargetProgram == null)
                 {
                     if (chatData.CurrentProgram != null) // CurrentProgram에 대한 null 체크 추가
                     {
                         chatData.CurrentProgram.Context = message;
-                        chatData.CurrentProgram.GeneratedContext = message;
+                        chatData.CurrentProgram.GeneratedContext = chatData.DotnetApplyContext;  // 적용용 컨텍스트 사용
                     }
                     else
                     {
@@ -253,7 +266,7 @@ namespace overlay_gpt.Network
                     if (chatData.TargetProgram != null) // TargetProgram에 대한 null 체크 추가
                     {
                         chatData.TargetProgram.Context = message;
-                        chatData.TargetProgram.GeneratedContext = message;
+                        chatData.TargetProgram.GeneratedContext = chatData.DotnetApplyContext;  // 적용용 컨텍스트 사용
                     }
                     else
                     {
@@ -375,6 +388,97 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"워크플로우 응답 처리 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+            }
+        }
+
+        private async Task HandleApplyResponseResult(JObject data)
+        {
+            try
+            {
+                Console.WriteLine("HandleApplyResponseResult 시작");
+                var chatId = data["chat_id"]?.Value<int>() ?? -1;
+                var applyContent = data["apply_content"]?.ToString();
+                var status = data["status"]?.ToString();
+                var message = data["message"]?.ToString();
+
+                Console.WriteLine($"받은 데이터 - chatId: {chatId}, status: {status}, applyContent 길이: {applyContent?.Length ?? 0}");
+
+                if (status == "success" && !string.IsNullOrEmpty(applyContent))
+                {
+                    // ChatData에서 적용할 컨텍스트를 새로운 applyContent로 업데이트
+                    var chatData = Services.ChatDataManager.Instance.GetChatDataById(chatId);
+                    if (chatData != null)
+                    {
+                        // 적용할 프로그램 결정
+                        var programToChange = chatData.TargetProgram ?? chatData.CurrentProgram;
+                        
+                        if (programToChange != null)
+                        {
+                            // 새로운 컨텍스트로 업데이트
+                            programToChange.GeneratedContext = applyContent;
+                            Console.WriteLine($"ChatData {chatId}의 GeneratedContext가 업데이트되었습니다. (길이: {applyContent.Length})");
+                            
+                            // 실제 적용 로직을 별도 스레드에서 실행
+                            await Task.Run(() =>
+                            {
+                                var thread = new Thread(() =>
+                                {
+                                    try
+                                    {
+                                        var writer = ContextWriterFactory.CreateWriter(programToChange.FileType);
+                                        if (writer == null)
+                                        {
+                                            throw new Exception($"지원하지 않는 프로그램입니다: {programToChange.FileType}");
+                                        }
+
+                                                                                 Console.WriteLine($"Writer 생성 완료: {programToChange.FileType}");
+                                         
+                                         // 파일 열기
+                                         if (!writer.OpenFile(programToChange.FilePath))
+                                         {
+                                             throw new Exception("파일을 열 수 없습니다. 파일이 존재하는지 확인해주세요.");
+                                         }
+                                         Console.WriteLine("파일 열기 성공");
+                                         
+                                         // 컨텍스트 적용
+                                         bool success = writer.ApplyTextWithStyle(applyContent, programToChange.Position);
+                                         if (!success)
+                                         {
+                                             throw new Exception("컨텍스트 적용에 실패했습니다.");
+                                         }
+                                         Console.WriteLine($"컨텍스트 적용 완료 - ChatID: {chatId}");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"컨텍스트 적용 중 오류 발생: {ex.Message}");
+                                        Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                                    }
+                                });
+
+                                thread.SetApartmentState(ApartmentState.STA);
+                                thread.Start();
+                                thread.Join();
+                            });
+                        }
+                        else
+                        {
+                            Console.WriteLine($"ChatData {chatId}에 적용할 프로그램 정보가 없습니다.");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"ChatData {chatId}를 찾을 수 없습니다.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"응답 적용 실패 - Status: {status}, Message: {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"HandleApplyResponseResult 처리 중 오류 발생: {ex.Message}");
                 Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
             }
         }
