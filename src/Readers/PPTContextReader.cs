@@ -145,7 +145,8 @@ namespace overlay_gpt
 
         private string GetStyledText(string text, Dictionary<string, object> styleAttributes)
         {
-            string result = text;
+            // HTML 태그가 포함된 텍스트를 안전하게 이스케이프 처리
+            string result = System.Web.HttpUtility.HtmlEncode(text);
             var styles = new List<string>();
             var spanStyles = new List<string>();
 
@@ -435,9 +436,20 @@ namespace overlay_gpt
 
         private string ConvertShapeToHtml(Microsoft.Office.Interop.PowerPoint.Shape shape)
         {
+            // 도형 타입 디버깅 로그 추가
+            Console.WriteLine($"\n=== ConvertShapeToHtml 시작 ===");
+            Console.WriteLine($"Shape Name: {shape.Name}");
+            Console.WriteLine($"Shape Type: {shape.Type} ({shape.Type.ToString()})");
+            Console.WriteLine($"Has Text Frame: {shape.HasTextFrame}");
+            Console.WriteLine($"Shape Width: {shape.Width}, Height: {shape.Height}");
+            Console.WriteLine($"Shape Left: {shape.Left}, Top: {shape.Top}");
+            
             string shapeType = GetShapeType(shape);
             string styleString = GetShapeStyleString(shape);
             string content = string.Empty;
+            
+            Console.WriteLine($"Determined Shape Type: {shapeType}");
+            Console.WriteLine($"Style String: {styleString}");
 
             if (shape.HasTextFrame == MsoTriState.msoTrue)
             {
@@ -587,48 +599,359 @@ namespace overlay_gpt
                 Console.WriteLine($"Final HTML: <{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>");
                 Console.WriteLine("===========================\n");
                 
-                return $"<{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>";
+                // 텍스트가 있는 도형에서도 배경 이미지 확인
+                Console.WriteLine("=== 텍스트 도형에서 배경 이미지 확인 ===");
+                try
+                {
+                    // Fill 속성에서 이미지 확인
+                    if (shape.Fill.Visible == MsoTriState.msoTrue && 
+                        shape.Fill.Type == MsoFillType.msoFillPicture)
+                    {
+                        Console.WriteLine("텍스트 도형에 배경 이미지 발견! 이미지 태그로 변환합니다.");
+                        
+                        // 이미지 저장 디렉토리 생성
+                        string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                        Console.WriteLine($"텍스트 도형 배경 이미지 디렉토리: {imageDir}");
+                        if (!Directory.Exists(imageDir))
+                        {
+                            Directory.CreateDirectory(imageDir);
+                            Console.WriteLine("텍스트 도형 배경 이미지 디렉토리 생성 완료");
+                        }
+
+                        // 임시 파일로 이미지 저장
+                        string tempFile = Path.GetTempFileName() + ".png";
+                        Console.WriteLine($"텍스트 도형 배경 이미지 임시 파일: {tempFile}");
+                        
+                        // 도형을 이미지로 Export (텍스트와 배경 이미지 모두 포함)
+                        shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                        Console.WriteLine("텍스트 도형 배경 이미지 Export 완료");
+                        
+                        // 이미지를 바이트 배열로 읽기
+                        byte[] imageBytes = File.ReadAllBytes(tempFile);
+                        Console.WriteLine($"텍스트 도형 배경 이미지 바이트 크기: {imageBytes.Length}");
+                        
+                        // 고유한 이미지 ID 생성
+                        string imageId = Guid.NewGuid().ToString();
+                        string imagePath = Path.Combine(imageDir, $"text_bg_{imageId}.png");
+                        Console.WriteLine($"텍스트 도형 배경 이미지 최종 경로: {imagePath}");
+
+                        // 이미지 데이터를 파일로 저장
+                        File.WriteAllBytes(imagePath, imageBytes);
+                        Console.WriteLine("텍스트 도형 배경 이미지 파일 저장 완료");
+                        
+                        // 임시 파일 삭제
+                        File.Delete(tempFile);
+                        Console.WriteLine("텍스트 도형 배경 이미지 임시 파일 삭제 완료");
+                        
+                        // 절대 경로로 이미지 참조
+                        string absolutePath = Path.GetFullPath(imagePath);
+                        Console.WriteLine($"텍스트 도형 배경 이미지 절대 경로: {absolutePath}");
+                        string imgTag = $"<img style='{mergedStyleString}' src='{absolutePath}' alt='Text with Background Image' />";
+                        Console.WriteLine($"생성된 텍스트 도형 배경 이미지 태그: {imgTag}");
+                        Console.WriteLine("=== 텍스트 도형 배경 이미지 처리 완료 - 이미지 태그로 반환 ===");
+                        return imgTag;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"텍스트 도형에 배경 이미지 없음. Fill.Visible: {shape.Fill.Visible}, Fill.Type: {shape.Fill.Type}");
+                        Console.WriteLine("일반 텍스트 도형으로 처리합니다.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"=== 텍스트 도형 배경 이미지 확인 중 오류 ===");
+                    Console.WriteLine($"오류 메시지: {ex.Message}");
+                    Console.WriteLine("일반 텍스트 도형으로 처리합니다.");
+                }
+                
+                string resultHtml = $"<{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>";
+                Console.WriteLine($"=== 최종 결과 ===");
+                Console.WriteLine($"Final HTML: {resultHtml}");
+                Console.WriteLine($"=== ConvertShapeToHtml 완료 ===\n");
+                return resultHtml;
             }
             else if (shape.Type == MsoShapeType.msoPicture)
             {
+                Console.WriteLine("=== 이미지 처리 시작 ===");
                 try
                 {
                     // 이미지 저장 디렉토리 생성
                     string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                    Console.WriteLine($"이미지 디렉토리: {imageDir}");
                     if (!Directory.Exists(imageDir))
                     {
                         Directory.CreateDirectory(imageDir);
+                        Console.WriteLine("이미지 디렉토리 생성 완료");
                     }
 
                     // 임시 파일로 이미지 저장
                     string tempFile = Path.GetTempFileName() + ".png";
+                    Console.WriteLine($"임시 파일 경로: {tempFile}");
+                    
                     shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                    Console.WriteLine("이미지 Export 완료");
                     
                     // 이미지를 바이트 배열로 읽기
                     byte[] imageBytes = File.ReadAllBytes(tempFile);
+                    Console.WriteLine($"이미지 바이트 크기: {imageBytes.Length}");
                     
                     // 고유한 이미지 ID 생성
                     string imageId = Guid.NewGuid().ToString();
                     string imagePath = Path.Combine(imageDir, $"{imageId}.png");
+                    Console.WriteLine($"최종 이미지 경로: {imagePath}");
 
                     // 이미지 데이터를 파일로 저장
                     File.WriteAllBytes(imagePath, imageBytes);
+                    Console.WriteLine("이미지 파일 저장 완료");
                     
                     // 임시 파일 삭제
                     File.Delete(tempFile);
+                    Console.WriteLine("임시 파일 삭제 완료");
                     
                     // 절대 경로로 이미지 참조
                     string absolutePath = Path.GetFullPath(imagePath);
-                    return $"<img style='{styleString}' src='{absolutePath}' alt='Image' />";
+                    Console.WriteLine($"절대 경로: {absolutePath}");
+                    string imgTag = $"<img style='{styleString}' src='{absolutePath}' alt='Image' />";
+                    Console.WriteLine($"생성된 img 태그: {imgTag}");
+                    Console.WriteLine("=== 이미지 처리 완료 ===");
+                    return imgTag;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"이미지 변환 중 오류 발생: {ex.Message}");
-                    return $"<img style='{styleString}' src='' alt='Image' />";
+                    Console.WriteLine($"=== 이미지 변환 중 오류 발생 ===");
+                    Console.WriteLine($"오류 메시지: {ex.Message}");
+                    Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                    string errorImgTag = $"<img style='{styleString}' src='' alt='Image' />";
+                    Console.WriteLine($"오류 시 반환할 태그: {errorImgTag}");
+                    Console.WriteLine("=== 이미지 처리 오류 완료 ===");
+                    return errorImgTag;
+                }
+            }
+            else
+            {
+                // 다른 도형 타입에서도 배경 이미지 확인
+                Console.WriteLine("=== 일반 도형에서 배경 이미지 확인 ===");
+                try
+                {
+                    // Fill 속성에서 이미지 확인
+                    if (shape.Fill.Visible == MsoTriState.msoTrue && 
+                        shape.Fill.Type == MsoFillType.msoFillPicture)
+                    {
+                        Console.WriteLine("도형에 배경 이미지 발견!");
+                        
+                        // 이미지 저장 디렉토리 생성
+                        string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                        Console.WriteLine($"배경 이미지 디렉토리: {imageDir}");
+                        if (!Directory.Exists(imageDir))
+                        {
+                            Directory.CreateDirectory(imageDir);
+                            Console.WriteLine("배경 이미지 디렉토리 생성 완료");
+                        }
+
+                        // 임시 파일로 이미지 저장
+                        string tempFile = Path.GetTempFileName() + ".png";
+                        Console.WriteLine($"배경 이미지 임시 파일: {tempFile}");
+                        
+                        // 도형을 이미지로 Export (배경 이미지 포함)
+                        shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                        Console.WriteLine("배경 이미지 Export 완료");
+                        
+                        // 이미지를 바이트 배열로 읽기
+                        byte[] imageBytes = File.ReadAllBytes(tempFile);
+                        Console.WriteLine($"배경 이미지 바이트 크기: {imageBytes.Length}");
+                        
+                        // 고유한 이미지 ID 생성
+                        string imageId = Guid.NewGuid().ToString();
+                        string imagePath = Path.Combine(imageDir, $"bg_{imageId}.png");
+                        Console.WriteLine($"배경 이미지 최종 경로: {imagePath}");
+
+                        // 이미지 데이터를 파일로 저장
+                        File.WriteAllBytes(imagePath, imageBytes);
+                        Console.WriteLine("배경 이미지 파일 저장 완료");
+                        
+                        // 임시 파일 삭제
+                        File.Delete(tempFile);
+                        Console.WriteLine("배경 이미지 임시 파일 삭제 완료");
+                        
+                        // 절대 경로로 이미지 참조
+                        string absolutePath = Path.GetFullPath(imagePath);
+                        Console.WriteLine($"배경 이미지 절대 경로: {absolutePath}");
+                        string imgTag = $"<img style='{styleString}' src='{absolutePath}' alt='Background Image' />";
+                        Console.WriteLine($"생성된 배경 이미지 태그: {imgTag}");
+                        Console.WriteLine("=== 배경 이미지 처리 완료 ===");
+                        return imgTag;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"배경 이미지 없음. Fill.Visible: {shape.Fill.Visible}, Fill.Type: {shape.Fill.Type}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"=== 배경 이미지 확인 중 오류 ===");
+                    Console.WriteLine($"오류 메시지: {ex.Message}");
+                    Console.WriteLine("=== 배경 이미지 확인 오류 완료 ===");
+                }
+                
+                // msoPlaceholder 타입의 이미지 placeholder 확인
+                Console.WriteLine("=== Placeholder 이미지 확인 ===");
+                try
+                {
+                    if (shape.Type == MsoShapeType.msoPlaceholder)
+                    {
+                        Console.WriteLine($"Placeholder 도형 발견. Name: {shape.Name}");
+                        
+                        // 이름에 "Picture"가 포함되어 있거나 PlaceholderFormat이 이미지 타입인지 확인
+                        bool isImagePlaceholder = false;
+                        
+                        // 이름 확인
+                        if (shape.Name.ToLower().Contains("picture"))
+                        {
+                            Console.WriteLine("이름에 'Picture'가 포함된 placeholder 발견");
+                            isImagePlaceholder = true;
+                        }
+                        
+                        // PlaceholderFormat 확인
+                        try
+                        {
+                            if (shape.PlaceholderFormat.Type == PpPlaceholderType.ppPlaceholderPicture ||
+                                shape.PlaceholderFormat.Type == PpPlaceholderType.ppPlaceholderBitmap)
+                            {
+                                Console.WriteLine($"이미지 타입 Placeholder 발견: {shape.PlaceholderFormat.Type}");
+                                isImagePlaceholder = true;
+                            }
+                        }
+                        catch (Exception placeholderEx)
+                        {
+                            Console.WriteLine($"PlaceholderFormat 확인 중 오류 (무시): {placeholderEx.Message}");
+                        }
+                        
+                        if (isImagePlaceholder)
+                        {
+                            Console.WriteLine("이미지 Placeholder로 판단됨. 도형을 이미지로 Export합니다.");
+                            
+                            // 이미지 저장 디렉토리 생성
+                            string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                            Console.WriteLine($"Placeholder 이미지 디렉토리: {imageDir}");
+                            if (!Directory.Exists(imageDir))
+                            {
+                                Directory.CreateDirectory(imageDir);
+                                Console.WriteLine("Placeholder 이미지 디렉토리 생성 완료");
+                            }
+
+                            // 임시 파일로 이미지 저장
+                            string tempFile = Path.GetTempFileName() + ".png";
+                            Console.WriteLine($"Placeholder 이미지 임시 파일: {tempFile}");
+                            
+                            // 도형을 이미지로 Export
+                            shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                            Console.WriteLine("Placeholder 이미지 Export 완료");
+                            
+                            // 이미지를 바이트 배열로 읽기
+                            byte[] imageBytes = File.ReadAllBytes(tempFile);
+                            Console.WriteLine($"Placeholder 이미지 바이트 크기: {imageBytes.Length}");
+                            
+                            // 고유한 이미지 ID 생성
+                            string imageId = Guid.NewGuid().ToString();
+                            string imagePath = Path.Combine(imageDir, $"placeholder_{imageId}.png");
+                            Console.WriteLine($"Placeholder 이미지 최종 경로: {imagePath}");
+
+                            // 이미지 데이터를 파일로 저장
+                            File.WriteAllBytes(imagePath, imageBytes);
+                            Console.WriteLine("Placeholder 이미지 파일 저장 완료");
+                            
+                            // 임시 파일 삭제
+                            File.Delete(tempFile);
+                            Console.WriteLine("Placeholder 이미지 임시 파일 삭제 완료");
+                            
+                            // 절대 경로로 이미지 참조
+                            string absolutePath = Path.GetFullPath(imagePath);
+                            Console.WriteLine($"Placeholder 이미지 절대 경로: {absolutePath}");
+                            string imgTag = $"<img style='{styleString}' src='{absolutePath}' alt='Placeholder Image' />";
+                            Console.WriteLine($"생성된 Placeholder 이미지 태그: {imgTag}");
+                            Console.WriteLine("=== Placeholder 이미지 처리 완료 ===");
+                            return imgTag;
+                        }
+                        else
+                        {
+                            Console.WriteLine("이미지 Placeholder가 아님");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"=== Placeholder 이미지 확인 중 오류 ===");
+                    Console.WriteLine($"오류 메시지: {ex.Message}");
+                    Console.WriteLine("=== Placeholder 이미지 확인 오류 완료 ===");
+                }
+                
+                // 그룹 도형인 경우 내부 도형들 확인
+                if (shape.Type == MsoShapeType.msoGroup)
+                {
+                    Console.WriteLine("=== 그룹 도형에서 이미지 검색 ===");
+                    try
+                    {
+                        foreach (Microsoft.Office.Interop.PowerPoint.Shape groupShape in shape.GroupItems)
+                        {
+                            Console.WriteLine($"그룹 내부 도형 타입: {groupShape.Type}");
+                            
+                            if (groupShape.Type == MsoShapeType.msoPicture)
+                            {
+                                Console.WriteLine("그룹 내부에서 이미지 발견!");
+                                
+                                // 이미지 저장 디렉토리 생성
+                                string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                                if (!Directory.Exists(imageDir))
+                                {
+                                    Directory.CreateDirectory(imageDir);
+                                }
+
+                                // 임시 파일로 이미지 저장
+                                string tempFile = Path.GetTempFileName() + ".png";
+                                
+                                // 그룹 내부 이미지 Export
+                                groupShape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                                Console.WriteLine("그룹 내부 이미지 Export 완료");
+                                
+                                // 이미지를 바이트 배열로 읽기
+                                byte[] imageBytes = File.ReadAllBytes(tempFile);
+                                Console.WriteLine($"그룹 내부 이미지 바이트 크기: {imageBytes.Length}");
+                                
+                                // 고유한 이미지 ID 생성
+                                string imageId = Guid.NewGuid().ToString();
+                                string imagePath = Path.Combine(imageDir, $"group_{imageId}.png");
+
+                                // 이미지 데이터를 파일로 저장
+                                File.WriteAllBytes(imagePath, imageBytes);
+                                Console.WriteLine("그룹 내부 이미지 파일 저장 완료");
+                                
+                                // 임시 파일 삭제
+                                File.Delete(tempFile);
+                                
+                                // 절대 경로로 이미지 참조
+                                string absolutePath = Path.GetFullPath(imagePath);
+                                string imgTag = $"<img style='{styleString}' src='{absolutePath}' alt='Group Image' />";
+                                Console.WriteLine($"그룹 내부 이미지 태그: {imgTag}");
+                                Console.WriteLine("=== 그룹 내부 이미지 처리 완료 ===");
+                                return imgTag;
+                            }
+                        }
+                        Console.WriteLine("그룹 내부에 이미지 없음");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"=== 그룹 도형 처리 중 오류 ===");
+                        Console.WriteLine($"오류 메시지: {ex.Message}");
+                        Console.WriteLine("=== 그룹 도형 처리 오류 완료 ===");
+                    }
                 }
             }
 
-            return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
+            string finalHtml = $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
+            Console.WriteLine($"=== 최종 결과 ===");
+            Console.WriteLine($"Final HTML: {finalHtml}");
+            Console.WriteLine($"=== ConvertShapeToHtml 완료 ===\n");
+            return finalHtml;
         }
 
         private bool IsPowerPointProcessActive()
