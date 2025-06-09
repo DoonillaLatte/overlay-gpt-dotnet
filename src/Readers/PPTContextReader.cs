@@ -435,9 +435,20 @@ namespace overlay_gpt
 
         private string ConvertShapeToHtml(Microsoft.Office.Interop.PowerPoint.Shape shape)
         {
+            // 도형 타입 디버깅 로그 추가
+            Console.WriteLine($"\n=== ConvertShapeToHtml 시작 ===");
+            Console.WriteLine($"Shape Name: {shape.Name}");
+            Console.WriteLine($"Shape Type: {shape.Type} ({shape.Type.ToString()})");
+            Console.WriteLine($"Has Text Frame: {shape.HasTextFrame}");
+            Console.WriteLine($"Shape Width: {shape.Width}, Height: {shape.Height}");
+            Console.WriteLine($"Shape Left: {shape.Left}, Top: {shape.Top}");
+            
             string shapeType = GetShapeType(shape);
             string styleString = GetShapeStyleString(shape);
             string content = string.Empty;
+            
+            Console.WriteLine($"Determined Shape Type: {shapeType}");
+            Console.WriteLine($"Style String: {styleString}");
 
             if (shape.HasTextFrame == MsoTriState.msoTrue)
             {
@@ -587,48 +598,75 @@ namespace overlay_gpt
                 Console.WriteLine($"Final HTML: <{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>");
                 Console.WriteLine("===========================\n");
                 
-                return $"<{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>";
+                string resultHtml = $"<{shapeType} style='{mergedStyleString}'>{content}</{shapeType}>";
+                Console.WriteLine($"=== 최종 결과 ===");
+                Console.WriteLine($"Final HTML: {resultHtml}");
+                Console.WriteLine($"=== ConvertShapeToHtml 완료 ===\n");
+                return resultHtml;
             }
             else if (shape.Type == MsoShapeType.msoPicture)
             {
+                Console.WriteLine("=== 이미지 처리 시작 ===");
                 try
                 {
                     // 이미지 저장 디렉토리 생성
                     string imageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "images");
+                    Console.WriteLine($"이미지 디렉토리: {imageDir}");
                     if (!Directory.Exists(imageDir))
                     {
                         Directory.CreateDirectory(imageDir);
+                        Console.WriteLine("이미지 디렉토리 생성 완료");
                     }
 
                     // 임시 파일로 이미지 저장
                     string tempFile = Path.GetTempFileName() + ".png";
+                    Console.WriteLine($"임시 파일 경로: {tempFile}");
+                    
                     shape.Export(tempFile, PpShapeFormat.ppShapeFormatPNG);
+                    Console.WriteLine("이미지 Export 완료");
                     
                     // 이미지를 바이트 배열로 읽기
                     byte[] imageBytes = File.ReadAllBytes(tempFile);
+                    Console.WriteLine($"이미지 바이트 크기: {imageBytes.Length}");
                     
                     // 고유한 이미지 ID 생성
                     string imageId = Guid.NewGuid().ToString();
                     string imagePath = Path.Combine(imageDir, $"{imageId}.png");
+                    Console.WriteLine($"최종 이미지 경로: {imagePath}");
 
                     // 이미지 데이터를 파일로 저장
                     File.WriteAllBytes(imagePath, imageBytes);
+                    Console.WriteLine("이미지 파일 저장 완료");
                     
                     // 임시 파일 삭제
                     File.Delete(tempFile);
+                    Console.WriteLine("임시 파일 삭제 완료");
                     
                     // 절대 경로로 이미지 참조
                     string absolutePath = Path.GetFullPath(imagePath);
-                    return $"<img style='{styleString}' src='{absolutePath}' alt='Image' />";
+                    Console.WriteLine($"절대 경로: {absolutePath}");
+                    string imgTag = $"<img style='{styleString}' src='{absolutePath}' alt='Image' />";
+                    Console.WriteLine($"생성된 img 태그: {imgTag}");
+                    Console.WriteLine("=== 이미지 처리 완료 ===");
+                    return imgTag;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"이미지 변환 중 오류 발생: {ex.Message}");
-                    return $"<img style='{styleString}' src='' alt='Image' />";
+                    Console.WriteLine($"=== 이미지 변환 중 오류 발생 ===");
+                    Console.WriteLine($"오류 메시지: {ex.Message}");
+                    Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                    string errorImgTag = $"<img style='{styleString}' src='' alt='Image' />";
+                    Console.WriteLine($"오류 시 반환할 태그: {errorImgTag}");
+                    Console.WriteLine("=== 이미지 처리 오류 완료 ===");
+                    return errorImgTag;
                 }
             }
 
-            return $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
+            string finalHtml = $"<{shapeType} style='{styleString}'>{content}</{shapeType}>";
+            Console.WriteLine($"=== 최종 결과 ===");
+            Console.WriteLine($"Final HTML: {finalHtml}");
+            Console.WriteLine($"=== ConvertShapeToHtml 완료 ===\n");
+            return finalHtml;
         }
 
         private bool IsPowerPointProcessActive()
