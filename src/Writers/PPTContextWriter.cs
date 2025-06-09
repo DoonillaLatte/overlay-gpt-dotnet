@@ -1104,16 +1104,6 @@ namespace overlay_gpt
                 var doc = new HtmlDocument();
                 doc.LoadHtml(text);
 
-                // 모든 슬라이드의 내용 삭제
-                for (int i = 1; i <= _presentation.Slides.Count; i++)
-                {
-                    var slide = _presentation.Slides[i];
-                    while (slide.Shapes.Count > 0)
-                    {
-                        slide.Shapes[1].Delete();
-                    }
-                }
-
                 // 슬라이드 번호 처리
                 if (lineNumber.StartsWith("Slide "))
                 {
@@ -1128,6 +1118,12 @@ namespace overlay_gpt
                         }
                         
                         _slide = _presentation.Slides[slideNumber];
+                        
+                        // 해당 슬라이드의 내용만 삭제
+                        while (_slide.Shapes.Count > 0)
+                        {
+                            _slide.Shapes[1].Delete();
+                        }
                         
                         // 해당 슬라이드의 내용만 처리
                         foreach (var node in doc.DocumentNode.ChildNodes)
@@ -1146,7 +1142,17 @@ namespace overlay_gpt
                 }
                 else
                 {
-                    // All Slides 모드 - 클래스 이름으로 슬라이드 구분
+                    // All Slides 모드 - 모든 슬라이드 내용 삭제
+                    for (int i = 1; i <= _presentation.Slides.Count; i++)
+                    {
+                        var slide = _presentation.Slides[i];
+                        while (slide.Shapes.Count > 0)
+                        {
+                            slide.Shapes[1].Delete();
+                        }
+                    }
+
+                    // 클래스 이름으로 슬라이드 구분
                     var slideDivs = doc.DocumentNode.SelectNodes("//div[starts-with(@class, 'Slide')]");
                     if (slideDivs != null)
                     {
