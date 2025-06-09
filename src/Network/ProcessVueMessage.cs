@@ -251,6 +251,18 @@ namespace overlay_gpt.Network
                     isTargetProg = true;
                 }
 
+                // 프로그램 정보가 null인지 확인
+                if (programToChange == null)
+                {
+                    throw new Exception("적용할 프로그램 정보가 없습니다. 프로그램을 선택해주세요.");
+                }
+
+                // 파일 타입이 유효한지 확인
+                if (string.IsNullOrEmpty(programToChange.FileType))
+                {
+                    throw new Exception("프로그램 타입이 지정되지 않았습니다.");
+                }
+
                 string generatedContext = programToChange.GeneratedContext;
                 Console.WriteLine($"적용할 컨텍스트 길이: {generatedContext?.Length ?? 0} 문자");
                 Console.WriteLine($"적용할 위치: {programToChange.Position}");
