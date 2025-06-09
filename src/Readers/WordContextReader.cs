@@ -250,7 +250,6 @@ namespace overlay_gpt
                             {
                                 _wordApp = new WordApp();
                                 Console.WriteLine("새 Word 애플리케이션 생성 성공");
-                                _wordApp.Visible = false;  // Word 창을 안보이게 설정
 
                                 Console.WriteLine($"활성 파일 경로: {_filePath}");
 
@@ -310,8 +309,6 @@ namespace overlay_gpt
                         Console.WriteLine("전체 문서 선택");
                         try 
                         {
-                            // Word를 일시적으로 보이게 설정
-                            bool originalVisible = _wordApp.Visible;
                             _wordApp.Visible = true;
                             
                             // 전체 문서 선택
@@ -323,8 +320,6 @@ namespace overlay_gpt
                             _wordApp.Selection.Copy();
                             Console.WriteLine("클립보드 복사 완료");
                             
-                            // 원래 상태로 복원
-                            _wordApp.Visible = originalVisible;
                             
                             // 클립보드 내용 확인
                             Console.WriteLine("클립보드 형식 확인 중...");
