@@ -283,7 +283,7 @@ namespace overlay_gpt.Network
                 }
 
                 // Vue에서 전송한 원본 HTML이 있으면 사용, 없으면 기존 GeneratedContext 사용
-                string contextToApply = applyContent ?? programToChange.GeneratedContext;
+                string contextToApply = programToChange.GeneratedContext;
                 
                 Console.WriteLine($"적용할 컨텍스트 길이: {contextToApply?.Length ?? 0} 문자");
                 Console.WriteLine($"적용할 위치: {programToChange.Position}");

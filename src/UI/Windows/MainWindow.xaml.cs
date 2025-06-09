@@ -119,8 +119,8 @@ namespace overlay_gpt
                 var programInfo = new Network.Models.Common.ProgramInfo
                 {
                     Context = context,
-                    FileId = fileInfo.FileId,
-                    VolumeId = fileInfo.VolumeId,
+                    FileId = fileInfo.FileId ?? 0,
+                    VolumeId = fileInfo.VolumeId ?? 0,
                     FileType = fileInfo.FileType,
                     FileName = fileInfo.FileName,
                     FilePath = fileInfo.FilePath,

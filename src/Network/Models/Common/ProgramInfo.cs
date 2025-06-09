@@ -9,10 +9,10 @@ namespace overlay_gpt.Network.Models.Common
         public string Context { get; set; } = string.Empty;
 
         [JsonPropertyName("fileId")]
-        public ulong? FileId { get; set; }
+        public ulong FileId { get; set; } = 0;
 
         [JsonPropertyName("volumeId")]
-        public uint? VolumeId { get; set; }
+        public uint VolumeId { get; set; } = 0;
 
         [JsonPropertyName("fileType")]
         public string FileType { get; set; } = string.Empty;

@@ -1068,7 +1068,6 @@ namespace overlay_gpt
                         {
                             _pptApp = new Application();
                             Console.WriteLine("새 PowerPoint 애플리케이션 생성 성공");
-                            _pptApp.Visible = MsoTriState.msoFalse;  // PowerPoint 창을 안보이게 설정
 
                             if (!string.IsNullOrEmpty(_filePath))
                             {

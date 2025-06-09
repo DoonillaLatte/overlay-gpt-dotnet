@@ -1,167 +1,263 @@
+using System;
 using System.Collections.Generic;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Automation;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Security.Principal;
+using System.Windows.Forms;    // SendKeys
+using Application = System.Windows.Application;
+using Clipboard = System.Windows.Clipboard;  // 명시적 Clipboard 지정
 
 namespace overlay_gpt
 {
     public class ClipboardContextReader : BaseContextReader
     {
+        // Win32 API: 포커스 강제용
+        [DllImport("user32.dll", SetLastError=true)]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
         [DllImport("user32.dll")]
-        private static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool CloseClipboard();
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool EmptyClipboard();
-
-        private const int KEYEVENTF_EXTENDEDKEY = 0x0001;
-        private const int KEYEVENTF_KEYUP = 0x0002;
-        private const byte VK_CONTROL = 0x11;
-        private const byte VK_A = 0x41;
-        private const byte VK_C = 0x43;
-        private const int MAX_RETRIES = 3;
-        private const int RETRY_DELAY = 100;
-
-        private void SimulateKeyPress(byte key)
-        {
-            try
-            {
-                LogWindow.Instance.Log($"키 입력 시뮬레이션 시작: {key}");
-                keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY, 0);
-                Thread.Sleep(100);
-                keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
-                Thread.Sleep(100);
-                LogWindow.Instance.Log($"키 입력 시뮬레이션 완료: {key}");
-            }
-            catch (System.Exception ex)
-            {
-                LogWindow.Instance.Log($"키 입력 시뮬레이션 중 오류: {ex.Message}");
-                throw;
-            }
-        }
-
-        private bool TryOpenClipboard()
-        {
-            for (int i = 0; i < MAX_RETRIES; i++)
-            {
-                if (OpenClipboard(IntPtr.Zero))
-                {
-                    return true;
-                }
-                LogWindow.Instance.Log($"클립보드 열기 시도 {i + 1}/{MAX_RETRIES} 실패");
-                Thread.Sleep(RETRY_DELAY);
-            }
-            return false;
-        }
+        private const int MAX_RETRIES    = 5;
+        private const int RETRY_DELAY_MS = 200;
 
         private void CopyToClipboard()
         {
+            Console.WriteLine("=== CopyToClipboard 시작 ===");
+            var focused = AutomationElement.FocusedElement;
+            if (focused == null)
+            {
+                Console.WriteLine("[오류] 포커스된 요소가 없습니다.");
+                return;
+            }
+            Console.WriteLine($"[정보] 포커스된 요소: {focused.Current.Name} (ControlType: {focused.Current.ControlType.ProgrammaticName})");
+
+            // TextPattern 시도
+            Console.WriteLine("\n[시도] TextPattern으로 텍스트 가져오기");
             try
             {
-                LogWindow.Instance.Log("클립보드 복사 프로세스 시작");
-                
-                var focusedElement = AutomationElement.FocusedElement;
-                if (focusedElement == null)
+                var textPattern = focused.GetCurrentPattern(TextPattern.Pattern) as TextPattern;
+                if (textPattern != null)
                 {
-                    LogWindow.Instance.Log("경고: 포커스된 요소가 없습니다");
-                    return;
+                    Console.WriteLine("[성공] TextPattern 패턴 획득");
+                    var text = textPattern.DocumentRange.GetText(-1);
+                    Console.WriteLine($"[정보] TextPattern으로 가져온 텍스트 길이: {text?.Length ?? 0}");
+                    
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        Console.WriteLine("[시도] TextPattern 텍스트를 클립보드에 설정");
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            try
+                            {
+                                Clipboard.SetText(text);
+                                Console.WriteLine("[성공] TextPattern 텍스트 클립보드 설정 완료");
+                                return;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[오류] TextPattern 클립보드 설정 실패: {ex.Message}");
+                                Console.WriteLine($"[상세] {ex.StackTrace}");
+                            }
+                        });
+                    }
+                    else
+                    {
+                        Console.WriteLine("[알림] TextPattern으로 가져온 텍스트가 비어있음");
+                    }
                 }
-
-                // 클립보드 초기화
-                if (TryOpenClipboard())
+                else
                 {
-                    EmptyClipboard();
-                    CloseClipboard();
+                    Console.WriteLine("[알림] TextPattern을 지원하지 않는 요소");
                 }
-                
-                LogWindow.Instance.Log("Ctrl 키 누르기 시작");
-                keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY, 0);
-                Thread.Sleep(100);
-                LogWindow.Instance.Log("Ctrl 키 누르기 완료");
-
-                LogWindow.Instance.Log("Ctrl+C 실행 시작");
-                SimulateKeyPress(VK_C);
-                LogWindow.Instance.Log("Ctrl+C 실행 완료");
-
-                LogWindow.Instance.Log("Ctrl 키 떼기 시작");
-                keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
-                Thread.Sleep(200);
-                LogWindow.Instance.Log("Ctrl 키 떼기 완료");
-                
-                Thread.Sleep(300);
-                LogWindow.Instance.Log("클립보드 복사 프로세스 완료");
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                LogWindow.Instance.Log($"복사 중 오류 발생: {ex.Message}");
-                LogWindow.Instance.Log($"스택 트레이스: {ex.StackTrace}");
-                throw;
+                Console.WriteLine($"[오류] TextPattern 시도 실패: {ex.Message}");
+                Console.WriteLine($"[상세] {ex.StackTrace}");
+            }
+
+            // ValuePattern 시도
+            Console.WriteLine("\n[시도] ValuePattern으로 텍스트 가져오기");
+            try
+            {
+                var valuePattern = focused.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+                if (valuePattern != null)
+                {
+                    Console.WriteLine("[성공] ValuePattern 패턴 획득");
+                    var value = valuePattern.Current.Value;
+                    Console.WriteLine($"[정보] ValuePattern으로 가져온 텍스트 길이: {value?.Length ?? 0}");
+                    
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        Console.WriteLine("[시도] ValuePattern 텍스트를 클립보드에 설정");
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            try
+                            {
+                                Clipboard.SetText(value);
+                                Console.WriteLine("[성공] ValuePattern 텍스트 클립보드 설정 완료");
+                                return;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[오류] ValuePattern 클립보드 설정 실패: {ex.Message}");
+                                Console.WriteLine($"[상세] {ex.StackTrace}");
+                            }
+                        });
+                    }
+                    else
+                    {
+                        Console.WriteLine("[알림] ValuePattern으로 가져온 텍스트가 비어있음");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("[알림] ValuePattern을 지원하지 않는 요소");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[오류] ValuePattern 시도 실패: {ex.Message}");
+                Console.WriteLine($"[상세] {ex.StackTrace}");
+            }
+
+            // 기존 클립보드 복사 방식 시도
+            Console.WriteLine("\n[시도] Ctrl+C 방식으로 텍스트 가져오기");
+            IntPtr hwnd = new IntPtr(focused.Current.NativeWindowHandle);
+            if (hwnd == IntPtr.Zero)
+            {
+                Console.WriteLine("[오류] 윈도우 핸들을 가져올 수 없습니다.");
+                return;
+            }
+            Console.WriteLine($"[정보] 윈도우 핸들: {hwnd}");
+
+            // 스레드 연결
+            uint targetThread = GetWindowThreadProcessId(hwnd, out _);
+            uint currentThread = GetCurrentThreadId();
+            
+            try
+            {
+                if (AttachThreadInput(currentThread, targetThread, true))
+                {
+                    // 윈도우 전경으로
+                    SetForegroundWindow(hwnd);
+                    Thread.Sleep(100);
+                    focused.SetFocus();
+                    Thread.Sleep(100);
+
+                    // 클립보드 초기화
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            Clipboard.Clear();
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Clipboard.Clear() 오류: {ex.Message}");
+                        }
+                    });
+
+                    // Ctrl+C 전송
+                    SendKeys.SendWait("^c");
+                    Thread.Sleep(300);
+                }
+            }
+            finally
+            {
+                // 스레드 연결 해제
+                AttachThreadInput(currentThread, targetThread, false);
             }
         }
 
         private string GetTextFromClipboard()
         {
+            // 여러 번 재시도하면서 Clipboard.ContainsText/Clipboard.GetText 사용
             for (int i = 0; i < MAX_RETRIES; i++)
             {
-                try
+                string text = string.Empty;
+                bool got = Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (TryOpenClipboard())
+                    try
                     {
-                        try
+                        if (Clipboard.ContainsText())
                         {
-                            string text = Clipboard.GetText();
-                            return text ?? string.Empty;
-                        }
-                        finally
-                        {
-                            CloseClipboard();
+                            text = Clipboard.GetText();
+                            return true;
                         }
                     }
-                }
-                catch (System.Exception ex)
-                {
-                    LogWindow.Instance.Log($"클립보드 읽기 시도 {i + 1}/{MAX_RETRIES} 실패: {ex.Message}");
-                }
-                Thread.Sleep(RETRY_DELAY);
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Clipboard.GetText() 시도 {i + 1} 실패: {ex.Message}");
+                    }
+                    return false;
+                });
+
+                if (got && !string.IsNullOrEmpty(text))
+                    return text;
+
+                Thread.Sleep(RETRY_DELAY_MS);
             }
+
             return string.Empty;
         }
 
-        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
+        private void CheckThreadAndPermissions()
         {
-            var styleAttributes = new Dictionary<string, object>();
-            
+            Console.WriteLine($"스레드 ID: {Thread.CurrentThread.ManagedThreadId}");
+            Console.WriteLine($"STA 여부: {Thread.CurrentThread.GetApartmentState() == ApartmentState.STA}");
+            var id = WindowsIdentity.GetCurrent();
+            Console.WriteLine($"사용자: {id.Name}");
+            Console.WriteLine($"관리자 권한: {new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator)}");
+        }
+
+        public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber)
+            GetSelectedTextWithStyle(bool readAllContent = false)
+        {
+            var style = new Dictionary<string, object>();
+
             try
             {
-                LogWindow.Instance.Log($"GetSelectedTextWithStyle 호출됨 (readAllContent: {readAllContent})");
-                
-                LogWindow.Instance.Log("클립보드 복사 시작");
-                CopyToClipboard();
-                
-                LogWindow.Instance.Log("클립보드에서 텍스트 가져오기 시작");
-                string text = GetTextFromClipboard();
-                LogWindow.Instance.Log($"클립보드에서 텍스트 가져오기 완료 - 길이: {text?.Length ?? 0}");
-                
-                if (string.IsNullOrEmpty(text))
+                Console.WriteLine("GetSelectedTextWithStyle 시작");
+                CheckThreadAndPermissions();
+
+                // 1) UI 스레드에서 복사 동작
+                Application.Current.Dispatcher.Invoke(() =>
                 {
-                    LogWindow.Instance.Log("경고: 가져온 텍스트가 비어있습니다");
-                }
-                
-                return (text, styleAttributes, string.Empty);
+                    Console.WriteLine("클립보드 복사 시도");
+                    CopyToClipboard();
+                });
+
+                // 2) 복사된 텍스트 읽기
+                Console.WriteLine("클립보드에서 텍스트 읽기");
+                string text = GetTextFromClipboard();
+                Console.WriteLine($"가져온 텍스트 길이: {text.Length}");
+
+                if (string.IsNullOrEmpty(text))
+                    Console.WriteLine("경고: 텍스트가 비어 있습니다.");
+
+                return (text, style, string.Empty);
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                LogWindow.Instance.Log($"텍스트 가져오기 중 오류 발생: {ex.Message}");
-                LogWindow.Instance.Log($"스택 트레이스: {ex.StackTrace}");
-                return (string.Empty, styleAttributes, string.Empty);
+                Console.WriteLine($"오류: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+                return (string.Empty, style, string.Empty);
             }
         }
+
+        public override (ulong? FileId, uint? VolumeId, string FileType, string FileName, string FilePath) GetFileInfo()
+        {
+            return (null, null, "Text", string.Empty, string.Empty);
+        }
     }
-} 
+}
