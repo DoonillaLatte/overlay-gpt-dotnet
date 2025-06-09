@@ -983,13 +983,26 @@ namespace overlay_gpt
 
         public PPTContextReader(bool isTargetProg = false, string filePath = "")
         {
-            Console.WriteLine($"PPTContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            Console.WriteLine($"[{timestamp}] === PPTContextReader 생성자 호출 ===");
+            Console.WriteLine($"[{timestamp}] PPTContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            Console.WriteLine($"[{timestamp}] 파일 경로: {filePath}");
+            Console.WriteLine($"[{timestamp}] 스레드 ID: {System.Threading.Thread.CurrentThread.ManagedThreadId}");
+            Console.WriteLine($"[{timestamp}] 프로세스 ID: {System.Diagnostics.Process.GetCurrentProcess().Id}");
             _isTargetProg = isTargetProg;
             _filePath = filePath;
+            Console.WriteLine($"[{timestamp}] === PPTContextReader 생성자 완료 ===\n");
         }
 
         public override (string SelectedText, Dictionary<string, object> StyleAttributes, string LineNumber) GetSelectedTextWithStyle(bool readAllContent = false)
         {
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            Console.WriteLine($"[{timestamp}] === GetSelectedTextWithStyle 시작 ===");
+            Console.WriteLine($"[{timestamp}] readAllContent: {readAllContent}");
+            Console.WriteLine($"[{timestamp}] isTargetProg: {_isTargetProg}");
+            Console.WriteLine($"[{timestamp}] 스레드 ID: {System.Threading.Thread.CurrentThread.ManagedThreadId}");
+            Console.WriteLine($"[{timestamp}] 프로세스 ID: {System.Diagnostics.Process.GetCurrentProcess().Id}");
+            
             var styledTextBuilder = new StringBuilder();
             var styleAttributes = new Dictionary<string, object>();
             string selectedText = string.Empty;

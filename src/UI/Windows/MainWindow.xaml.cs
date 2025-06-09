@@ -24,6 +24,8 @@ namespace overlay_gpt
         private WithVueAsHost _vueServer;
         private WithFlaskAsClient _flaskClient;
         private TextProcessingService _textProcessingService;
+        private DateTime _lastFetchTime = DateTime.MinValue;
+        private const int FetchDebounceMs = 2000; // 2초
 
         public static MainWindow Instance { get; private set; }
         public WithVueAsHost VueServer => _vueServer;
@@ -89,6 +91,19 @@ namespace overlay_gpt
         {
             try
             {
+                // Debounce 로직: 마지막 호출로부터 2초 이내면 무시
+                var now = DateTime.Now;
+                var timeSinceLastFetch = (now - _lastFetchTime).TotalMilliseconds;
+                
+                if (timeSinceLastFetch < FetchDebounceMs)
+                {
+                    LogWindow.Instance.Log($"중복 요청 방지: 마지막 요청으로부터 {timeSinceLastFetch:F0}ms 경과 (최소 {FetchDebounceMs}ms 필요)");
+                    return;
+                }
+                
+                _lastFetchTime = now;
+                LogWindow.Instance.Log($"[{now:yyyy-MM-dd HH:mm:ss.fff}] 컨텍스트 가져오기 시작");
+                
                 var element = AutomationElement.FocusedElement;
                 var reader = ContextReaderFactory.CreateReader(element);
                 LogWindow.Instance.Log($"Reader Type: {reader.GetType().Name}");

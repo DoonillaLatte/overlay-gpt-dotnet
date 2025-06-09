@@ -112,11 +112,16 @@ namespace overlay_gpt.Network
         {
             try
             {
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== HandleSendUserPrompt 시작 ==========");
+                
                 var vueRequest = data.ToObject<VueRequest>();
                 if (vueRequest == null)
                 {
                     throw new Exception("잘못된 요청 형식입니다.");
                 }
+
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] VueRequest 파싱 완료 - ChatId: {vueRequest.ChatId}");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Prompt: {vueRequest.Prompt?.Substring(0, Math.Min(100, vueRequest.Prompt?.Length ?? 0))}...");
 
                 var chatData = ChatDataManager.Instance.GetChatDataById(vueRequest.ChatId);
                 if (chatData == null)
@@ -142,8 +147,15 @@ namespace overlay_gpt.Network
                     TargetProgram = vueRequest.TargetProgram
                 };
 
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== Flask 요청 전송 시작 ==========");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Flask Request ChatId: {flaskRequest.ChatId}");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Flask Request Command: request_prompt");
+                
                 await _flaskClient.EmitAsync("message", flaskRequest);
+                
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== Flask 요청 전송 완료 ==========");
                 Console.WriteLine("Flask 서버로 메시지를 전송했습니다.");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== HandleSendUserPrompt 완료 ==========");
             }
             catch (Exception ex)
             {
@@ -426,38 +438,35 @@ namespace overlay_gpt.Network
                 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
 
-                // 파일 내용 읽기
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 시작");
+                // 파일 내용과 정보를 한 번에 가져오기 (중복 호출 방지)
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 및 정보 읽기 시작");
                 var contextReader = new TargetProgContextReader();
-                var (fileContent, position) = await contextReader.ReadFileContent(filePath, fileType);
+                var (fileContent, position, fileId, volumeId, readFileType, fileName) = await contextReader.ReadFileContentAndInfo(filePath, fileType);
                 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 내용 읽기 완료 - 크기: {fileContent.Length} 문자");
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 위치 정보: {position}");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 - FileId: {fileId}, VolumeId: {volumeId}, FileName: {fileName}");
 
-                // 파일 정보 가져오기
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 시작");
-                var fileInfo = contextReader.GetFileInfo(filePath);
-                if (fileInfo.FileId == null || fileInfo.VolumeId == null)
+                if (fileId == null || volumeId == null)
                 {
                     throw new Exception("파일 정보를 가져올 수 없습니다.");
                 }
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 파일 정보 가져오기 완료");
 
                 // ChatData의 target_program 업데이트
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] TargetProgram 설정 시작");
                 Console.WriteLine($"- FilePath: {filePath}");
                 Console.WriteLine($"- FileType: {fileType}");
-                Console.WriteLine($"- FileId: {fileInfo.FileId.Value}");
-                Console.WriteLine($"- VolumeId: {fileInfo.VolumeId.Value}");
+                Console.WriteLine($"- FileId: {fileId.Value}");
+                Console.WriteLine($"- VolumeId: {volumeId.Value}");
                 Console.WriteLine($"- GeneratedContext : {fileContent}");
                 Console.WriteLine($"- Position: {position}");
                 chatData.TargetProgram = new ProgramInfo
                 {
-                    FileName = fileInfo.FileName,
+                    FileName = fileName,
                     FilePath = filePath,
                     FileType = fileType,
-                    FileId = fileInfo.FileId.Value,
-                    VolumeId = fileInfo.VolumeId.Value,
+                    FileId = fileId.Value,
+                    VolumeId = volumeId.Value,
                     GeneratedContext = fileContent,
                     Position = position
                 };
