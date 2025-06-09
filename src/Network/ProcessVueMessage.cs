@@ -401,7 +401,7 @@ namespace overlay_gpt.Network
                 var filePath = targetProgram[1];
                 
                 // 테스트 파일 경로
-                filePath = "C:\\Users\\beste\\OneDrive\\Desktop\\testFolder\\single_test.pptx";
+                //filePath = "C:\\Users\\beste\\OneDrive\\Desktop\\testFolder\\single_test.pptx";
                 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 대상 파일 경로: {filePath}");
 
