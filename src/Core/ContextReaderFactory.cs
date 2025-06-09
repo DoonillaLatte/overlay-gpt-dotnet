@@ -192,7 +192,7 @@ namespace overlay_gpt
             }
                 
             // TextBox나 ValueBox일 때 포커스 여부 확인
-            if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 
+            /*if (element.TryGetCurrentPattern(TextPattern.Pattern, out _) || 
                 element.TryGetCurrentPattern(ValuePattern.Pattern, out _))
             {
                 // 현재 포커스된 요소와 비교
@@ -205,8 +205,7 @@ namespace overlay_gpt
                     if (element.TryGetCurrentPattern(ValuePattern.Pattern, out _))
                         return new ValuePatternContextReader();
                 }
-                return new ClipboardContextReader();
-            }
+            }*/
 
             // 클립보드 리더 추가
             return new ClipboardContextReader();
