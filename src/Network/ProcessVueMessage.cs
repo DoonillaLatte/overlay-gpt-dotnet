@@ -437,7 +437,7 @@ namespace overlay_gpt.Network
                 Console.WriteLine($"- FileType: {fileType}");
                 Console.WriteLine($"- FileId: {fileInfo.FileId.Value}");
                 Console.WriteLine($"- VolumeId: {fileInfo.VolumeId.Value}");
-                Console.WriteLine($"- GeneratedContext : {fileContent}");
+                Console.WriteLine($"- Context : {fileContent}");
                 Console.WriteLine($"- Position: {position}");
                 chatData.TargetProgram = new ProgramInfo
                 {
@@ -446,7 +446,7 @@ namespace overlay_gpt.Network
                     FileType = fileType,
                     FileId = fileInfo.FileId.Value,
                     VolumeId = fileInfo.VolumeId.Value,
-                    GeneratedContext = fileContent,
+                    Context = fileContent,
                     Position = position
                 };
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] TargetProgram 설정 완료");

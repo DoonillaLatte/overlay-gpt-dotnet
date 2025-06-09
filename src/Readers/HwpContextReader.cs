@@ -7,6 +7,7 @@ using System.IO;
 using System.Xml;
 using Microsoft.Extensions.Logging;
 using System.IO.Compression;
+using System.Windows.Forms;
 
 namespace overlay_gpt
 {
@@ -287,6 +288,19 @@ namespace overlay_gpt
             try
             {
                 _logger.LogInformation("GetSelectedTextWithStyle 시작");
+
+                // 클립보드에서 HTML 형식 확인
+                if (Clipboard.ContainsData(DataFormats.Html))
+                {
+                    _logger.LogInformation("HTML 형식의 클립보드 데이터 발견");
+                    string htmlContent = Clipboard.GetData(DataFormats.Html) as string;
+                    if (!string.IsNullOrEmpty(htmlContent))
+                    {
+                        _logger.LogInformation($"HTML 내용 추출 완료: {htmlContent.Length}자");
+                        _logger.LogInformation($"HTML 내용: {htmlContent}");
+                        return (htmlContent, new Dictionary<string, object>(), "1");
+                    }
+                }
 
                 // 현재 포커스된 프로세스가 한글인지 확인
                 if (!IsHwpProcessActive())
