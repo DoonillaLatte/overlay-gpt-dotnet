@@ -13,7 +13,9 @@ namespace overlay_gpt
 {
     public class ClipboardContextReader : BaseContextReader
     {
-        // Win32 API: 포커스 강제용
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
         [DllImport("user32.dll", SetLastError=true)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
@@ -32,126 +34,53 @@ namespace overlay_gpt
         private void CopyToClipboard()
         {
             Console.WriteLine("=== CopyToClipboard 시작 ===");
+            
+            // 1. 현재 포커스된 요소에서 시작
             var focused = AutomationElement.FocusedElement;
             if (focused == null)
             {
                 Console.WriteLine("[오류] 포커스된 요소가 없습니다.");
                 return;
             }
-            Console.WriteLine($"[정보] 포커스된 요소: {focused.Current.Name} (ControlType: {focused.Current.ControlType.ProgrammaticName})");
 
-            // TextPattern 시도
-            Console.WriteLine("\n[시도] TextPattern으로 텍스트 가져오기");
-            try
+            // 2. 부모 윈도우 찾기
+            AutomationElement parent = focused;
+            IntPtr hwnd = IntPtr.Zero;
+
+            while (parent != null)
             {
-                var textPattern = focused.GetCurrentPattern(TextPattern.Pattern) as TextPattern;
-                if (textPattern != null)
+                hwnd = new IntPtr(parent.Current.NativeWindowHandle);
+                if (hwnd != IntPtr.Zero)
                 {
-                    Console.WriteLine("[성공] TextPattern 패턴 획득");
-                    var text = textPattern.DocumentRange.GetText(-1);
-                    Console.WriteLine($"[정보] TextPattern으로 가져온 텍스트 길이: {text?.Length ?? 0}");
-                    
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        Console.WriteLine("[시도] TextPattern 텍스트를 클립보드에 설정");
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            try
-                            {
-                                Clipboard.SetText(text);
-                                Console.WriteLine("[성공] TextPattern 텍스트 클립보드 설정 완료");
-                                return;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[오류] TextPattern 클립보드 설정 실패: {ex.Message}");
-                                Console.WriteLine($"[상세] {ex.StackTrace}");
-                            }
-                        });
-                    }
-                    else
-                    {
-                        Console.WriteLine("[알림] TextPattern으로 가져온 텍스트가 비어있음");
-                    }
+                    Console.WriteLine($"[정보] 유효한 윈도우 핸들 발견: {hwnd}");
+                    break;
                 }
-                else
-                {
-                    Console.WriteLine("[알림] TextPattern을 지원하지 않는 요소");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[오류] TextPattern 시도 실패: {ex.Message}");
-                Console.WriteLine($"[상세] {ex.StackTrace}");
+                parent = TreeWalker.RawViewWalker.GetParent(parent);
             }
 
-            // ValuePattern 시도
-            Console.WriteLine("\n[시도] ValuePattern으로 텍스트 가져오기");
-            try
-            {
-                var valuePattern = focused.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-                if (valuePattern != null)
-                {
-                    Console.WriteLine("[성공] ValuePattern 패턴 획득");
-                    var value = valuePattern.Current.Value;
-                    Console.WriteLine($"[정보] ValuePattern으로 가져온 텍스트 길이: {value?.Length ?? 0}");
-                    
-                    if (!string.IsNullOrEmpty(value))
-                    {
-                        Console.WriteLine("[시도] ValuePattern 텍스트를 클립보드에 설정");
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            try
-                            {
-                                Clipboard.SetText(value);
-                                Console.WriteLine("[성공] ValuePattern 텍스트 클립보드 설정 완료");
-                                return;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[오류] ValuePattern 클립보드 설정 실패: {ex.Message}");
-                                Console.WriteLine($"[상세] {ex.StackTrace}");
-                            }
-                        });
-                    }
-                    else
-                    {
-                        Console.WriteLine("[알림] ValuePattern으로 가져온 텍스트가 비어있음");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("[알림] ValuePattern을 지원하지 않는 요소");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[오류] ValuePattern 시도 실패: {ex.Message}");
-                Console.WriteLine($"[상세] {ex.StackTrace}");
-            }
-
-            // 기존 클립보드 복사 방식 시도
-            Console.WriteLine("\n[시도] Ctrl+C 방식으로 텍스트 가져오기");
-            IntPtr hwnd = new IntPtr(focused.Current.NativeWindowHandle);
+            // 3. 윈도우 핸들을 찾지 못한 경우 현재 활성화된 창 사용
             if (hwnd == IntPtr.Zero)
             {
-                Console.WriteLine("[오류] 윈도우 핸들을 가져올 수 없습니다.");
+                hwnd = GetForegroundWindow();
+                Console.WriteLine($"[정보] 현재 활성화된 창 핸들 사용: {hwnd}");
+            }
+
+            if (hwnd == IntPtr.Zero)
+            {
+                Console.WriteLine("[오류] 유효한 윈도우 핸들을 찾을 수 없습니다.");
                 return;
             }
-            Console.WriteLine($"[정보] 윈도우 핸들: {hwnd}");
 
-            // 스레드 연결
+            // 4. 스레드 연결 및 복사 수행
             uint targetThread = GetWindowThreadProcessId(hwnd, out _);
             uint currentThread = GetCurrentThreadId();
-            
+
             try
             {
                 if (AttachThreadInput(currentThread, targetThread, true))
                 {
                     // 윈도우 전경으로
                     SetForegroundWindow(hwnd);
-                    Thread.Sleep(100);
-                    focused.SetFocus();
                     Thread.Sleep(100);
 
                     // 클립보드 초기화
@@ -174,7 +103,6 @@ namespace overlay_gpt
             }
             finally
             {
-                // 스레드 연결 해제
                 AttachThreadInput(currentThread, targetThread, false);
             }
         }
