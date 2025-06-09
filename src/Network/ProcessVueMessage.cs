@@ -441,6 +441,7 @@ namespace overlay_gpt.Network
                 Console.WriteLine($"- Position: {position}");
                 chatData.TargetProgram = new ProgramInfo
                 {
+                    FileName = fileInfo.FileName,
                     FilePath = filePath,
                     FileType = fileType,
                     FileId = fileInfo.FileId.Value,

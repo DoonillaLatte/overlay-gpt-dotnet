@@ -113,14 +113,56 @@ namespace overlay_gpt
                         Console.WriteLine($"Excel 버전: {_excelApp.Version}");
                         Console.WriteLine($"활성 워크북 수: {_excelApp.Workbooks.Count}");
                         
-                        // 활성 워크북 가져오기
-                        _workbook = _excelApp.ActiveWorkbook;
-                        if (_workbook == null)
+                        if (_isTargetProg)
                         {
-                            Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
-                            return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                            // 모든 워크북 확인
+                            bool foundWorkbook = false;
+                            foreach (Workbook workbook in _excelApp.Workbooks)
+                            {
+                                try
+                                {
+                                    if (!string.IsNullOrEmpty(_filePath) && 
+                                        string.Equals(workbook.FullName, _filePath, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        _workbook = workbook;
+                                        foundWorkbook = true;
+                                        Console.WriteLine($"일치하는 워크북 찾음: {_workbook.Name}");
+                                        break;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"워크북 확인 중 오류: {ex.Message}");
+                                    continue;
+                                }
+                            }
+
+                            if (!foundWorkbook)
+                            {
+                                Console.WriteLine("일치하는 워크북을 찾을 수 없습니다.");
+                                if (!string.IsNullOrEmpty(_filePath))
+                                {
+                                    Console.WriteLine($"파일 열기 시도: {_filePath}");
+                                    _workbook = _excelApp.Workbooks.Open(_filePath);
+                                    Console.WriteLine("파일 열기 성공");
+                                }
+                                else
+                                {
+                                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                                }
+                            }
                         }
-                        Console.WriteLine($"활성 워크북 이름: {_workbook.Name}");
+                        else
+                        {
+                            // 활성 워크북만 확인
+                            _workbook = _excelApp.ActiveWorkbook;
+                            if (_workbook == null)
+                            {
+                                Console.WriteLine("활성 워크북을 찾을 수 없습니다.");
+                                return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                            }
+                            Console.WriteLine($"활성 워크북 이름: {_workbook.Name}");
+                        }
                     }
                     else 
                     {
@@ -363,32 +405,52 @@ namespace overlay_gpt
             try
             {
                 tempExcelApp = (Microsoft.Office.Interop.Excel.Application)GetActiveObject("Excel.Application");
-                tempWorkbook = tempExcelApp.ActiveWorkbook;
                 
-                if (tempWorkbook == null)
+                if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                 {
-                    return (null, null, "Excel", string.Empty, string.Empty);
-                }
-
-                string filePath = tempWorkbook.FullName;
-                string fileName = tempWorkbook.Name;
-                
-                // filePath가 비어있지 않을 때 일치 여부 체크
-                if (!string.IsNullOrEmpty(_filePath) && !string.IsNullOrEmpty(filePath))
-                {
-                    if (!string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                    // 모든 워크북 확인
+                    foreach (Workbook workbook in tempExcelApp.Workbooks)
                     {
-                        Console.WriteLine($"파일 경로가 일치하지 않습니다. 기대: {_filePath}, 실제: {filePath}");
-                        return (null, null, "Excel", string.Empty, string.Empty);
+                        try
+                        {
+                            string filePath = workbook.FullName;
+                            string fileName = workbook.Name;
+                            
+                            if (string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                FileInfo fileInfo = new FileInfo(filePath);
+                                ulong fileId = (ulong)fileInfo.GetHashCode();
+                                uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
+                                
+                                return (fileId, volumeId, "Excel", fileName, filePath);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"워크북 처리 중 오류: {ex.Message}");
+                            continue;
+                        }
+                    }
+                }
+                else
+                {
+                    // 활성 워크북 정보 가져오기
+                    tempWorkbook = tempExcelApp.ActiveWorkbook;
+                    if (tempWorkbook != null)
+                    {
+                        string filePath = tempWorkbook.FullName;
+                        string fileName = tempWorkbook.Name;
+                        
+                        FileInfo fileInfo = new FileInfo(filePath);
+                        ulong fileId = (ulong)fileInfo.GetHashCode();
+                        uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
+                        
+                        return (fileId, volumeId, "Excel", fileName, filePath);
                     }
                 }
                 
-                // 파일 정보 가져오기
-                FileInfo fileInfo = new FileInfo(filePath);
-                ulong fileId = (ulong)fileInfo.GetHashCode();
-                uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
-                
-                return (fileId, volumeId, "Excel", fileName, filePath);
+                Console.WriteLine("파일 정보를 가져올 수 없습니다.");
+                return (null, null, "Excel", string.Empty, string.Empty);
             }
             catch (Exception ex)
             {
