@@ -187,6 +187,15 @@ namespace overlay_gpt.Network
                     throw new Exception("chat_id 또는 generated_timestamp가 누락되었습니다.");
                 }
 
+                // 타임스탬프 형식 정규화 (마지막 0이 사라진 경우 처리)
+                else if (generatedTimestamp.EndsWith("Z") && generatedTimestamp.Split('.')[1].Length < 4)
+                {
+                    var parts = generatedTimestamp.Split('.');
+                    var milliseconds = parts[1].TrimEnd('Z').PadRight(3, '0');
+                    generatedTimestamp = $"{parts[0]}.{milliseconds}Z";
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 타임스탬프 형식 보정: {generatedTimestamp}");
+                }
+
                 var chatData = ChatDataManager.Instance.GetChatDataByTimeStamp(generatedTimestamp);
                 if (chatData != null)
                 {

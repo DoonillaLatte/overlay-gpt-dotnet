@@ -187,8 +187,8 @@ namespace overlay_gpt
             {
                 Console.WriteLine("Word 데이터 읽기 시작...");
 
-                // 현재 포커스된 프로세스가 Word인지 확인
-                if (!IsWordProcessActive())
+                // isTargetProg가 false일 때만 현재 포커스된 프로세스가 Word인지 확인
+                if (!_isTargetProg && !IsWordProcessActive())
                 {
                     Console.WriteLine("현재 포커스된 프로세스가 Word가 아닙니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);

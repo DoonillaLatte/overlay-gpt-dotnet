@@ -678,8 +678,8 @@ namespace overlay_gpt
                 Console.WriteLine($"readAllContent: {readAllContent}");
                 Console.WriteLine($"isTargetProg: {_isTargetProg}");
 
-                // 현재 포커스된 프로세스가 PowerPoint인지 확인
-                if (!IsPowerPointProcessActive())
+                // isTargetProg가 false일 때만 현재 포커스된 프로세스가 PowerPoint인지 확인
+                if (!_isTargetProg && !IsPowerPointProcessActive())
                 {
                     Console.WriteLine("현재 포커스된 프로세스가 PowerPoint가 아닙니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);

@@ -93,8 +93,8 @@ namespace overlay_gpt
             {
                 Console.WriteLine("Excel 데이터 읽기 시작...");
 
-                // 현재 포커스된 프로세스가 Excel인지 확인
-                if (!IsExcelProcessActive())
+                // isTargetProg가 false일 때만 현재 포커스된 프로세스가 Excel인지 확인
+                if (!_isTargetProg && !IsExcelProcessActive())
                 {
                     Console.WriteLine("현재 포커스된 프로세스가 Excel이 아닙니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
