@@ -143,9 +143,9 @@ namespace overlay_gpt.Network
                     ChatId = vueRequest.ChatId,
                     Prompt = vueRequest.Prompt,
                     GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                    RequestType = 1,
-                    CurrentProgram = vueRequest.CurrentProgram,
-                    TargetProgram = vueRequest.TargetProgram
+                    RequestType = 5,
+                    CurrentProgram = chatData.CurrentProgram,
+                    TargetProgram = chatData.TargetProgram
                 };
 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== Flask 요청 전송 시작 ==========");
@@ -604,7 +604,7 @@ namespace overlay_gpt.Network
                     FileType = fileType,
                     FileId = fileId.Value,
                     VolumeId = volumeId.Value,
-                    GeneratedContext = fileContent,
+                    Context = fileContent,
                     Position = position
                 };
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] TargetProgram 설정 완료");
