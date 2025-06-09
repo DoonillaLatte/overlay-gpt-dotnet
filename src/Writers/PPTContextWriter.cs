@@ -1100,6 +1100,20 @@ namespace overlay_gpt
                     return false;
                 }
 
+                // HTML 파싱
+                var doc = new HtmlDocument();
+                doc.LoadHtml(text);
+
+                // 모든 슬라이드의 내용 삭제
+                for (int i = 1; i <= _presentation.Slides.Count; i++)
+                {
+                    var slide = _presentation.Slides[i];
+                    while (slide.Shapes.Count > 0)
+                    {
+                        slide.Shapes[1].Delete();
+                    }
+                }
+
                 // 슬라이드 번호 처리
                 if (lineNumber.StartsWith("Slide "))
                 {
@@ -1114,6 +1128,15 @@ namespace overlay_gpt
                         }
                         
                         _slide = _presentation.Slides[slideNumber];
+                        
+                        // 해당 슬라이드의 내용만 처리
+                        foreach (var node in doc.DocumentNode.ChildNodes)
+                        {
+                            if (node.NodeType == HtmlNodeType.Element)
+                            {
+                                ProcessHtmlNode(node);
+                            }
+                        }
                     }
                     else
                     {
@@ -1123,39 +1146,58 @@ namespace overlay_gpt
                 }
                 else
                 {
-                    // 첫 번째 슬라이드 사용
-                    if (_presentation.Slides.Count > 0)
+                    // All Slides 모드 - 클래스 이름으로 슬라이드 구분
+                    var slideDivs = doc.DocumentNode.SelectNodes("//div[starts-with(@class, 'Slide')]");
+                    if (slideDivs != null)
                     {
-                        _slide = _presentation.Slides[1];
+                        foreach (var slideDiv in slideDivs)
+                        {
+                            string className = slideDiv.GetAttributeValue("class", "");
+                            if (className.StartsWith("Slide"))
+                            {
+                                string slideNumberStr = className.Replace("Slide", "").Trim();
+                                if (int.TryParse(slideNumberStr, out int slideNumber) && slideNumber > 0)
+                                {
+                                    // 필요한 만큼 슬라이드 생성
+                                    while (_presentation.Slides.Count < slideNumber)
+                                    {
+                                        _presentation.Slides.Add(_presentation.Slides.Count + 1, PpSlideLayout.ppLayoutBlank);
+                                    }
+                                    
+                                    _slide = _presentation.Slides[slideNumber];
+                                    
+                                    // 해당 슬라이드의 내용 처리
+                                    foreach (var node in slideDiv.ChildNodes)
+                                    {
+                                        if (node.NodeType == HtmlNodeType.Element)
+                                        {
+                                            ProcessHtmlNode(node);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     else
                     {
-                        _presentation.Slides.Add(1, PpSlideLayout.ppLayoutBlank);
-                        _slide = _presentation.Slides[1];
-                    }
-                }
+                        // 슬라이드 구분이 없는 경우 첫 번째 슬라이드에 모든 내용 적용
+                        if (_presentation.Slides.Count > 0)
+                        {
+                            _slide = _presentation.Slides[1];
+                        }
+                        else
+                        {
+                            _presentation.Slides.Add(1, PpSlideLayout.ppLayoutBlank);
+                            _slide = _presentation.Slides[1];
+                        }
 
-                if (_slide == null)
-                {
-                    Console.WriteLine("슬라이드 선택 실패");
-                    return false;
-                }
-
-                // 기존 도형 삭제
-                while (_slide.Shapes.Count > 0)
-                {
-                    _slide.Shapes[1].Delete();
-                }
-
-                // HTML 파싱 및 처리
-                var doc = new HtmlDocument();
-                doc.LoadHtml(text);
-
-                foreach (var node in doc.DocumentNode.ChildNodes)
-                {
-                    if (node.NodeType == HtmlNodeType.Element)
-                    {
-                        ProcessHtmlNode(node);
+                        foreach (var node in doc.DocumentNode.ChildNodes)
+                        {
+                            if (node.NodeType == HtmlNodeType.Element)
+                            {
+                                ProcessHtmlNode(node);
+                            }
+                        }
                     }
                 }
 
@@ -1188,4 +1230,5 @@ namespace overlay_gpt
         }
     }
 }
+
 

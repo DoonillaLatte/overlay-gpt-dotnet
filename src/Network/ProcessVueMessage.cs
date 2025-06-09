@@ -143,13 +143,14 @@ namespace overlay_gpt.Network
                     ChatId = vueRequest.ChatId,
                     Prompt = vueRequest.Prompt,
                     GeneratedTimestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                    RequestType = 5,
+                    RequestType = chatData.TargetProgram == null ? 1 : 5,
                     CurrentProgram = chatData.CurrentProgram,
                     TargetProgram = chatData.TargetProgram
                 };
 
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ========== Flask 요청 전송 시작 ==========");
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Flask Request ChatId: {flaskRequest.ChatId}");
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Flask Request TargetProgram: {flaskRequest.TargetProgram?.FileName}");
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Flask Request Command: request_prompt");
                 
                 await _flaskClient.EmitAsync("message", flaskRequest);
