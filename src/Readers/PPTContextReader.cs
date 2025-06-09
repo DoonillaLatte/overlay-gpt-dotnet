@@ -1184,7 +1184,16 @@ namespace overlay_gpt
                 }
                 else
                 {
-                    shapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
+                    // 선택된 도형이 있으면 해당 슬라이드의 모든 도형을 선택
+                    var selectedShapes = _pptApp.ActiveWindow?.Selection?.ShapeRange;
+                    if (selectedShapes != null && selectedShapes.Count > 0)
+                    {
+                        shapes = _slide.Shapes.Range();
+                    }
+                    else
+                    {
+                        shapes = selectedShapes;
+                    }
                 }
 
                 if (shapes == null)
