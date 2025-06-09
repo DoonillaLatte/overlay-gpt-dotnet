@@ -93,6 +93,48 @@ namespace overlay_gpt
             }
         }
 
+        private float ParseSafeFloat(string value, float defaultValue = 0)
+        {
+            try
+            {
+                var cleanValue = value?.Replace("px", "").Replace("pt", "").Trim();
+                if (string.IsNullOrEmpty(cleanValue))
+                {
+                    Console.WriteLine($"빈 값이 전달됨, 기본값 {defaultValue} 사용");
+                    return defaultValue;
+                }
+                    
+                if (float.TryParse(cleanValue, out float result))
+                {
+                    Console.WriteLine($"값 파싱 성공: '{value}' -> {result}");
+                    return result;
+                }
+                Console.WriteLine($"값 파싱 실패: '{value}', 기본값 {defaultValue} 사용");
+                return defaultValue;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"값 파싱 중 예외: '{value}' - {ex.Message}, 기본값 {defaultValue} 사용");
+                return defaultValue;
+            }
+        }
+
+        private bool IsValidPosition(float value)
+        {
+            bool isValid = value >= -10000 && value <= 10000;
+            if (!isValid)
+                Console.WriteLine($"유효하지 않은 위치 값: {value} (유효 범위: -10000 ~ 10000)");
+            return isValid;
+        }
+
+        private bool IsValidSize(float value)
+        {
+            bool isValid = value >= 1 && value <= 5000;
+            if (!isValid)
+                Console.WriteLine($"유효하지 않은 크기 값: {value} (유효 범위: 1 ~ 5000)");
+            return isValid;
+        }
+
         private void ApplyStyleToShape(Microsoft.Office.Interop.PowerPoint.Shape shape, string style)
         {
             var styleDict = new Dictionary<string, string>();
@@ -105,46 +147,92 @@ namespace overlay_gpt
                 }
             }
 
-            // 위치와 크기 적용
-            if (styleDict.ContainsKey("left"))
-                shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
-            if (styleDict.ContainsKey("top"))
-                shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
-            if (styleDict.ContainsKey("width"))
-                shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
-            if (styleDict.ContainsKey("height"))
-                shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
-
-            // 회전 적용
-            if (styleDict.ContainsKey("transform"))
+            // 위치와 크기 적용 (안전한 파싱과 검증)
+            try
             {
-                var transform = styleDict["transform"];
-                if (transform.Contains("rotate"))
+                if (styleDict.ContainsKey("left"))
                 {
-                    var rotation = transform.Replace("rotate(", "").Replace("deg)", "");
-                    shape.Rotation = float.Parse(rotation);
+                    var leftValue = ParseSafeFloat(styleDict["left"]);
+                    if (IsValidPosition(leftValue))
+                        shape.Left = leftValue;
                 }
-                else if (transform.Contains("rotateX"))
+                if (styleDict.ContainsKey("top"))
                 {
-                    var rotationX = transform.Replace("rotateX(", "").Replace("deg)", "");
-                    shape.ThreeD.RotationX = float.Parse(rotationX);
+                    var topValue = ParseSafeFloat(styleDict["top"]);
+                    if (IsValidPosition(topValue))
+                        shape.Top = topValue;
                 }
-                else if (transform.Contains("rotateY"))
+                if (styleDict.ContainsKey("width"))
                 {
-                    var rotationY = transform.Replace("rotateY(", "").Replace("deg)", "");
-                    shape.ThreeD.RotationY = float.Parse(rotationY);
+                    var widthValue = ParseSafeFloat(styleDict["width"], 100);
+                    if (IsValidSize(widthValue))
+                        shape.Width = widthValue;
+                }
+                if (styleDict.ContainsKey("height"))
+                {
+                    var heightValue = ParseSafeFloat(styleDict["height"], 50);
+                    if (IsValidSize(heightValue))
+                        shape.Height = heightValue;
                 }
             }
-
-            // 3D 효과 적용
-            if (styleDict.ContainsKey("transform-style") && styleDict["transform-style"] == "preserve-3d")
+            catch (Exception ex)
             {
-                shape.ThreeD.Visible = MsoTriState.msoTrue;
+                Console.WriteLine($"위치/크기 적용 중 오류: {ex.Message}");
             }
-            if (styleDict.ContainsKey("perspective"))
+
+            // 회전 적용 (안전한 파싱)
+            try
             {
-                var perspective = styleDict["perspective"].Replace("px", "");
-                shape.ThreeD.Perspective = (MsoTriState)float.Parse(perspective);
+                if (styleDict.ContainsKey("transform"))
+                {
+                    var transform = styleDict["transform"];
+                    if (transform.Contains("rotate"))
+                    {
+                        var rotation = transform.Replace("rotate(", "").Replace("deg)", "");
+                        var rotationValue = ParseSafeFloat(rotation);
+                        if (rotationValue >= -360 && rotationValue <= 360)
+                            shape.Rotation = rotationValue;
+                    }
+                    else if (transform.Contains("rotateX"))
+                    {
+                        var rotationX = transform.Replace("rotateX(", "").Replace("deg)", "");
+                        var rotationXValue = ParseSafeFloat(rotationX);
+                        if (rotationXValue >= -360 && rotationXValue <= 360)
+                            shape.ThreeD.RotationX = rotationXValue;
+                    }
+                    else if (transform.Contains("rotateY"))
+                    {
+                        var rotationY = transform.Replace("rotateY(", "").Replace("deg)", "");
+                        var rotationYValue = ParseSafeFloat(rotationY);
+                        if (rotationYValue >= -360 && rotationYValue <= 360)
+                            shape.ThreeD.RotationY = rotationYValue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"회전 적용 중 오류: {ex.Message}");
+            }
+
+            // 3D 효과 적용 (안전한 파싱)
+            try
+            {
+                if (styleDict.ContainsKey("transform-style") && styleDict["transform-style"] == "preserve-3d")
+                {
+                    shape.ThreeD.Visible = MsoTriState.msoTrue;
+                }
+                if (styleDict.ContainsKey("perspective"))
+                {
+                    var perspectiveValue = ParseSafeFloat(styleDict["perspective"]);
+                    if (perspectiveValue >= 0 && perspectiveValue <= 5000)
+                    {
+                        shape.ThreeD.Perspective = (MsoTriState)perspectiveValue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"3D 효과 적용 중 오류: {ex.Message}");
             }
 
             // 텍스트 스타일 적용
@@ -203,14 +291,21 @@ namespace overlay_gpt
                 shape.TextFrame.TextRange.Font.Color.RGB = 0;
             }
 
-            // 폰트 크기 적용
-            if (styleDict.ContainsKey("font-size"))
+            // 폰트 크기 적용 (안전한 파싱)
+            try
             {
-                var fontSize = styleDict["font-size"].Replace("pt", "").Trim();
-                if (float.TryParse(fontSize, out float size))
+                if (styleDict.ContainsKey("font-size"))
                 {
-                    shape.TextFrame.TextRange.Font.Size = size;
+                    var fontSize = ParseSafeFloat(styleDict["font-size"], 11);
+                    if (fontSize >= 1 && fontSize <= 1638)
+                    {
+                        shape.TextFrame.TextRange.Font.Size = fontSize;
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"폰트 크기 적용 중 오류: {ex.Message}");
             }
 
             // 배경색 적용
@@ -269,52 +364,100 @@ namespace overlay_gpt
                 shape.Fill.Visible = MsoTriState.msoFalse;
             }
 
-            // 테두리 적용
-            if (styleDict.ContainsKey("border"))
+            // 테두리 적용 (안전한 파싱)
+            try
             {
-                var border = styleDict["border"].Split(' ');
-                if (border.Length >= 3)
+                if (styleDict.ContainsKey("border"))
                 {
-                    shape.Line.Weight = float.Parse(border[0].Replace("px", ""));
-                    shape.Line.ForeColor.RGB = ParseColor(border[2]);
+                    var border = styleDict["border"].Split(' ');
+                    if (border.Length >= 3)
+                    {
+                        var borderWeight = ParseSafeFloat(border[0], 1);
+                        if (borderWeight >= 0 && borderWeight <= 100)
+                        {
+                            shape.Line.Weight = borderWeight;
+                            shape.Line.ForeColor.RGB = ParseColor(border[2]);
+                        }
+                    }
+                }
+                else
+                {
+                    shape.Line.Visible = MsoTriState.msoFalse;
                 }
             }
-            else
+            catch (Exception ex)
             {
+                Console.WriteLine($"테두리 적용 중 오류: {ex.Message}");
                 shape.Line.Visible = MsoTriState.msoFalse;
             }
 
-            // 모서리 둥글기 적용
-            if (styleDict.ContainsKey("border-radius"))
+            // 모서리 둥글기 적용 (안전한 파싱)
+            try
             {
-                var radius = styleDict["border-radius"].Replace("px", "");
-                shape.Adjustments[1] = float.Parse(radius);
-            }
-
-            // 그림자 효과 적용
-            if (styleDict.ContainsKey("box-shadow"))
-            {
-                var shadow = styleDict["box-shadow"].Split(' ');
-                if (shadow.Length >= 4)
+                if (styleDict.ContainsKey("border-radius"))
                 {
-                    shape.Shadow.Visible = MsoTriState.msoTrue;
-                    shape.Shadow.OffsetX = float.Parse(shadow[0].Replace("px", ""));
-                    shape.Shadow.OffsetY = float.Parse(shadow[1].Replace("px", ""));
-                    shape.Shadow.Blur = float.Parse(shadow[2].Replace("px", ""));
-                    shape.Shadow.ForeColor.RGB = ParseColor(shadow[3]);
+                    var radius = ParseSafeFloat(styleDict["border-radius"]);
+                    if (radius >= 0 && radius <= 100)
+                    {
+                        shape.Adjustments[1] = radius;
+                    }
                 }
             }
-
-            // Z-인덱스 적용
-            if (styleDict.ContainsKey("z-index"))
+            catch (Exception ex)
             {
-                var zIndex = int.Parse(styleDict["z-index"]);
-                // Z-인덱스는 읽기 전용이므로 ZOrder 메서드를 사용
-                shape.ZOrder(MsoZOrderCmd.msoBringToFront);
-                for (int i = 0; i < zIndex; i++)
+                Console.WriteLine($"모서리 둥글기 적용 중 오류: {ex.Message}");
+            }
+
+            // 그림자 효과 적용 (안전한 파싱)
+            try
+            {
+                if (styleDict.ContainsKey("box-shadow"))
                 {
-                    shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                    var shadow = styleDict["box-shadow"].Split(' ');
+                    if (shadow.Length >= 4)
+                    {
+                        var offsetX = ParseSafeFloat(shadow[0]);
+                        var offsetY = ParseSafeFloat(shadow[1]);
+                        var blur = ParseSafeFloat(shadow[2]);
+                        
+                        if (offsetX >= -100 && offsetX <= 100 && 
+                            offsetY >= -100 && offsetY <= 100 && 
+                            blur >= 0 && blur <= 100)
+                        {
+                            shape.Shadow.Visible = MsoTriState.msoTrue;
+                            shape.Shadow.OffsetX = offsetX;
+                            shape.Shadow.OffsetY = offsetY;
+                            shape.Shadow.Blur = blur;
+                            shape.Shadow.ForeColor.RGB = ParseColor(shadow[3]);
+                        }
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"그림자 효과 적용 중 오류: {ex.Message}");
+            }
+
+            // Z-인덱스 적용 (안전한 파싱)
+            try
+            {
+                if (styleDict.ContainsKey("z-index"))
+                {
+                    var zIndex = (int)ParseSafeFloat(styleDict["z-index"]);
+                    if (zIndex >= 0 && zIndex <= 100)
+                    {
+                        // Z-인덱스는 읽기 전용이므로 ZOrder 메서드를 사용
+                        shape.ZOrder(MsoZOrderCmd.msoBringToFront);
+                        for (int i = 0; i < zIndex; i++)
+                        {
+                            shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Z-인덱스 적용 중 오류: {ex.Message}");
             }
         }
 
@@ -502,23 +645,49 @@ namespace overlay_gpt
                         MsoTriState.msoTrue,
                         0, 0);
 
-                    // 스타일 적용
-                    if (styleDict.ContainsKey("left"))
-                        shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
-                    if (styleDict.ContainsKey("top"))
-                        shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
-                    if (styleDict.ContainsKey("width"))
-                        shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
-                    if (styleDict.ContainsKey("height"))
-                        shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
-                    if (styleDict.ContainsKey("z-index"))
+                    // 스타일 적용 (안전한 파싱)
+                    try
                     {
-                        var zIndex = int.Parse(styleDict["z-index"]);
-                        shape.ZOrder(MsoZOrderCmd.msoBringToFront);
-                        for (int i = 0; i < zIndex; i++)
+                        if (styleDict.ContainsKey("left"))
                         {
-                            shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                            var leftValue = ParseSafeFloat(styleDict["left"]);
+                            if (IsValidPosition(leftValue))
+                                shape.Left = leftValue;
                         }
+                        if (styleDict.ContainsKey("top"))
+                        {
+                            var topValue = ParseSafeFloat(styleDict["top"]);
+                            if (IsValidPosition(topValue))
+                                shape.Top = topValue;
+                        }
+                        if (styleDict.ContainsKey("width"))
+                        {
+                            var widthValue = ParseSafeFloat(styleDict["width"], 100);
+                            if (IsValidSize(widthValue))
+                                shape.Width = widthValue;
+                        }
+                        if (styleDict.ContainsKey("height"))
+                        {
+                            var heightValue = ParseSafeFloat(styleDict["height"], 100);
+                            if (IsValidSize(heightValue))
+                                shape.Height = heightValue;
+                        }
+                        if (styleDict.ContainsKey("z-index"))
+                        {
+                            var zIndex = (int)ParseSafeFloat(styleDict["z-index"]);
+                            if (zIndex >= 0 && zIndex <= 100)
+                            {
+                                shape.ZOrder(MsoZOrderCmd.msoBringToFront);
+                                for (int i = 0; i < zIndex; i++)
+                                {
+                                    shape.ZOrder(MsoZOrderCmd.msoSendBackward);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"이미지 스타일 적용 중 오류: {ex.Message}");
                     }
                 }
                 catch (Exception ex)
@@ -548,15 +717,38 @@ namespace overlay_gpt
                         }
                     }
 
-                    // 위치와 크기 적용
-                    if (styleDict.ContainsKey("left"))
-                        shape.Left = float.Parse(styleDict["left"].Replace("px", ""));
-                    if (styleDict.ContainsKey("top"))
-                        shape.Top = float.Parse(styleDict["top"].Replace("px", ""));
-                    if (styleDict.ContainsKey("width"))
-                        shape.Width = float.Parse(styleDict["width"].Replace("px", ""));
-                    if (styleDict.ContainsKey("height"))
-                        shape.Height = float.Parse(styleDict["height"].Replace("px", ""));
+                    // 위치와 크기 적용 (안전한 파싱)
+                    try
+                    {
+                        if (styleDict.ContainsKey("left"))
+                        {
+                            var leftValue = ParseSafeFloat(styleDict["left"]);
+                            if (IsValidPosition(leftValue))
+                                shape.Left = leftValue;
+                        }
+                        if (styleDict.ContainsKey("top"))
+                        {
+                            var topValue = ParseSafeFloat(styleDict["top"]);
+                            if (IsValidPosition(topValue))
+                                shape.Top = topValue;
+                        }
+                        if (styleDict.ContainsKey("width"))
+                        {
+                            var widthValue = ParseSafeFloat(styleDict["width"], 100);
+                            if (IsValidSize(widthValue))
+                                shape.Width = widthValue;
+                        }
+                        if (styleDict.ContainsKey("height"))
+                        {
+                            var heightValue = ParseSafeFloat(styleDict["height"], 50);
+                            if (IsValidSize(heightValue))
+                                shape.Height = heightValue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"div 위치/크기 적용 중 오류: {ex.Message}");
+                    }
 
                     // 텍스트 정렬 적용
                     if (styleDict.ContainsKey("text-align"))
@@ -677,14 +869,21 @@ namespace overlay_gpt
                                 }
                             }
 
-                            // 폰트 크기 적용
-                            if (styleDict.ContainsKey("font-size"))
+                            // 폰트 크기 적용 (안전한 파싱)
+                            try
                             {
-                                var fontSize = styleDict["font-size"].Replace("pt", "").Trim();
-                                if (float.TryParse(fontSize, out float size))
+                                if (styleDict.ContainsKey("font-size"))
                                 {
-                                    shape.TextFrame.TextRange.Font.Size = size;
+                                    var fontSize = ParseSafeFloat(styleDict["font-size"], 11);
+                                    if (fontSize >= 1 && fontSize <= 1638)
+                                    {
+                                        shape.TextFrame.TextRange.Font.Size = fontSize;
+                                    }
                                 }
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"span 폰트 크기 적용 중 오류: {ex.Message}");
                             }
 
                             // 하이라이트 색상 적용
