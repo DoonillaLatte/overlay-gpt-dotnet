@@ -9,6 +9,7 @@ using overlay_gpt.Services;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace overlay_gpt.Network
 {
@@ -352,17 +353,30 @@ namespace overlay_gpt.Network
                         var fileName = Path.GetFileName(foundFile);
                         var filePath = foundFile;
                         
+                        // 파일명 인코딩 정리
+                        if (!string.IsNullOrEmpty(fileName))
+                        {
+                            // 파일명에서 null 문자나 제어 문자 제거
+                            fileName = Regex.Replace(fileName, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
+                            fileName = fileName.Trim();
+                        }
                         
-                        
-
-                        convertedPrograms.Add(new List<string> { fileName, filePath });
+                        // 파일명과 경로가 유효한지 확인
+                        if (!string.IsNullOrEmpty(fileName) && !string.IsNullOrEmpty(filePath))
+                        {
+                            convertedPrograms.Add(new List<string> { fileName, filePath });
+                        }
                     }
                 }
                 
-                // 임시 파일 경로 생성. 나중에 지울 것
-                convertedPrograms.Add(new List<string> { "임시파일1.확장자", "임시파일경로1/임시파일경로2/임시파일1.확장자" });
-                convertedPrograms.Add(new List<string> { "임시파일2.확장자", "임시파일경로1/임시파일경로2/임시파일2.확장자" });
-                convertedPrograms.Add(new List<string> { "임시파일3.확장자", "임시파일경로1/임시파일경로2/임시파일3.확장자" });
+                // 실제 파일이 없는 경우에만 테스트 파일 추가 (개발용)
+                if (convertedPrograms.Count == 0)
+                {
+                    Console.WriteLine("실제 파일을 찾을 수 없어 테스트 파일을 추가합니다.");
+                    convertedPrograms.Add(new List<string> { "test1.docx", "C:/Users/test/Documents/test1.docx" });
+                    convertedPrograms.Add(new List<string> { "presentation.pptx", "D:/Work/presentation.pptx" });
+                    convertedPrograms.Add(new List<string> { "analysis.xlsx", "C:/Users/test/Desktop/analysis.xlsx" });
+                }
 
                 // Vue로 메시지 전송
                 var responseData = new
