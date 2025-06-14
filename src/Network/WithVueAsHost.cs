@@ -119,12 +119,14 @@ public class ChatHub : Hub
     {
         try
         {
-            var message = new JObject
+            // 단순한 pong 응답으로 keep-alive 확인
+            var response = new
             {
-                ["command"] = "ping",
-                ["connectionId"] = Context.ConnectionId
+                command = "pong",
+                connectionId = Context.ConnectionId,
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
             };
-            await _messageProcessor.ProcessMessage(Context.ConnectionId, message);
+            await Clients.Caller.SendAsync("ReceiveMessage", response);
         }
         catch (Exception ex)
         {
@@ -134,7 +136,7 @@ public class ChatHub : Hub
                 status = "error",
                 message = $"Ping 처리 중 오류 발생: {ex.Message}"
             };
-            await Clients.Client(Context.ConnectionId).SendAsync("ReceiveMessage", response);
+            await Clients.Caller.SendAsync("ReceiveMessage", response);
         }
     }
 }
@@ -268,8 +270,8 @@ public class WithVueAsHost
                     {
                         options.EnableDetailedErrors = true;
                         options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10MB로 증가
-                        options.KeepAliveInterval = TimeSpan.FromSeconds(30);
-                        options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+                        options.KeepAliveInterval = TimeSpan.FromSeconds(15); // 15초로 단축 (더 자주 keep-alive 전송)
+                        options.ClientTimeoutInterval = TimeSpan.FromSeconds(120); // 2분으로 증가 (타임아웃 여유 확보)
                         options.HandshakeTimeout = TimeSpan.FromSeconds(30);
                     });
 
