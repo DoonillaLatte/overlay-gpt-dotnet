@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace overlay_gpt.Network
 {
@@ -353,12 +354,42 @@ namespace overlay_gpt.Network
                         var fileName = Path.GetFileName(foundFile);
                         var filePath = foundFile;
                         
-                        // 파일명 인코딩 정리
+                        // 파일명 인코딩 정리 (더 강화된 버전)
                         if (!string.IsNullOrEmpty(fileName))
                         {
-                            // 파일명에서 null 문자나 제어 문자 제거
-                            fileName = Regex.Replace(fileName, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "");
+                            Console.WriteLine($"원본 파일명: {fileName} (길이: {fileName.Length})");
+                            Console.WriteLine($"문자 코드: {string.Join(", ", fileName.Select(c => ((int)c).ToString()))}");
+                            
+                            // 1단계: 제어 문자 및 보이지 않는 문자 제거
+                            fileName = Regex.Replace(fileName, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "");
+                            fileName = Regex.Replace(fileName, @"[\u200B-\u200D\uFEFF]", ""); // Zero-width chars, BOM
+                            
+                            // 2단계: 확장자 분리 처리
+                            var lastDotIndex = fileName.LastIndexOf('.');
+                            if (lastDotIndex > 0 && lastDotIndex < fileName.Length - 1)
+                            {
+                                var nameWithoutExt = fileName.Substring(0, lastDotIndex);
+                                var extension = fileName.Substring(lastDotIndex + 1);
+                                
+                                // 확장자는 영문/숫자만 허용
+                                extension = Regex.Replace(extension, @"[^\w]", "");
+                                
+                                // 파일명 재구성
+                                if (!string.IsNullOrEmpty(extension))
+                                {
+                                    fileName = nameWithoutExt + "." + extension;
+                                }
+                                else
+                                {
+                                    fileName = nameWithoutExt;
+                                }
+                            }
+                            
+                            // 3단계: 최종 정리
                             fileName = fileName.Trim();
+                            fileName = Regex.Replace(fileName, @"\s+", " "); // 연속 공백 정리
+                            
+                            Console.WriteLine($"정리된 파일명: {fileName}");
                         }
                         
                         // 파일명과 경로가 유효한지 확인

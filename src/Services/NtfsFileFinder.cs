@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Text;
+using System.Linq;
 
 namespace overlay_gpt.Services
 {
@@ -269,11 +270,21 @@ namespace overlay_gpt.Services
                                     Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 파일 정보 조회 성공");
                                     Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] - FileNameLength: {fileInfo.FileNameLength}");
 
-                                    // 파일 경로 가져오기
-                                    var fileName = new byte[fileInfo.FileNameLength];
-                                    Marshal.Copy(buffer + Marshal.SizeOf(typeof(FILE_NAME_INFORMATION)), fileName, 0, (int)fileInfo.FileNameLength);
-                                    var path = Encoding.Unicode.GetString(fileName, 0, (int)fileInfo.FileNameLength).TrimEnd('\0');
-                                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 파일 경로: {path}");
+                                    // 파일 경로 가져오기 (더 안전한 방식)
+                                    var fileNameBytes = new byte[fileInfo.FileNameLength];
+                                    Marshal.Copy(buffer + Marshal.SizeOf(typeof(uint)), fileNameBytes, 0, (int)fileInfo.FileNameLength);
+                                    
+                                    // Unicode 문자열로 변환하고 제어 문자 제거
+                                    var path = Encoding.Unicode.GetString(fileNameBytes, 0, (int)fileInfo.FileNameLength);
+                                    
+                                    // null terminator 및 제어 문자 제거
+                                    path = path.TrimEnd('\0');
+                                    path = System.Text.RegularExpressions.Regex.Replace(path, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "");
+                                    path = path.Trim();
+                                    
+                                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 원본 바이트 길이: {fileInfo.FileNameLength}");
+                                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 바이트 배열: {BitConverter.ToString(fileNameBytes.Take(Math.Min(50, fileNameBytes.Length)).ToArray())}");
+                                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] 정리된 파일 경로: {path}");
                                     
                                     // 경로 정규화
                                     path = path.Replace("\\", "/").TrimEnd('/');
