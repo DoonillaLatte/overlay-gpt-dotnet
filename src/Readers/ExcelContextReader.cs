@@ -418,11 +418,26 @@ namespace overlay_gpt
                             
                             if (string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase))
                             {
-                                FileInfo fileInfo = new FileInfo(filePath);
-                                ulong fileId = (ulong)fileInfo.GetHashCode();
-                                uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
+                                var fileIdInfo = GetFileId(filePath);
                                 
-                                return (fileId, volumeId, "Excel", fileName, filePath);
+                                if (fileIdInfo == null)
+                                {
+                                    Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"파일 ID 정보:");
+                                    Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                                    Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                                }
+                                
+                                return (
+                                    fileIdInfo?.FileId,
+                                    fileIdInfo?.VolumeId,
+                                    "Excel",
+                                    fileName,
+                                    filePath
+                                );
                             }
                         }
                         catch (Exception ex)
@@ -441,11 +456,30 @@ namespace overlay_gpt
                         string filePath = tempWorkbook.FullName;
                         string fileName = tempWorkbook.Name;
                         
-                        FileInfo fileInfo = new FileInfo(filePath);
-                        ulong fileId = (ulong)fileInfo.GetHashCode();
-                        uint volumeId = (uint)(fileInfo.Directory?.Root.GetHashCode() ?? 0);
+                        Console.WriteLine($"활성 Excel 문서 정보:");
+                        Console.WriteLine($"- 파일 경로: {filePath}");
+                        Console.WriteLine($"- 파일 이름: {fileName}");
                         
-                        return (fileId, volumeId, "Excel", fileName, filePath);
+                        var fileIdInfo = GetFileId(filePath);
+                        
+                        if (fileIdInfo == null)
+                        {
+                            Console.WriteLine("파일 ID 정보를 가져오지 못했습니다.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"파일 ID 정보:");
+                            Console.WriteLine($"- FileId: {fileIdInfo.Value.FileId}");
+                            Console.WriteLine($"- VolumeId: {fileIdInfo.Value.VolumeId}");
+                        }
+                        
+                        return (
+                            fileIdInfo?.FileId,
+                            fileIdInfo?.VolumeId,
+                            "Excel",
+                            fileName,
+                            filePath
+                        );
                     }
                 }
                 
@@ -477,6 +511,107 @@ namespace overlay_gpt
             object obj;
             GetActiveObject(ref clsid, IntPtr.Zero, out obj);
             return obj;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandle(
+            IntPtr hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint dwFileAttributes;
+            public FILETIME ftCreationTime;
+            public FILETIME ftLastAccessTime;
+            public FILETIME ftLastWriteTime;
+            public uint dwVolumeSerialNumber;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
+            public uint nNumberOfLinks;
+            public uint nFileIndexHigh;
+            public uint nFileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint dwLowDateTime;
+            public uint dwHighDateTime;
+        }
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+
+        private (ulong FileId, uint VolumeId)? GetFileId(string filePath)
+        {
+            try
+            {
+                Console.WriteLine($"GetFileId 호출 - 파일 경로: {filePath}");
+                
+                if (!File.Exists(filePath))
+                {
+                    Console.WriteLine("파일이 존재하지 않습니다.");
+                    return null;
+                }
+
+                IntPtr handle = CreateFile(
+                    filePath,
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    0,
+                    IntPtr.Zero);
+
+                if (handle.ToInt64() == -1)
+                {
+                    Console.WriteLine($"CreateFile 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
+                    return null;
+                }
+
+                try
+                {
+                    BY_HANDLE_FILE_INFORMATION fileInfo;
+                    if (GetFileInformationByHandle(handle, out fileInfo))
+                    {
+                        ulong fileId = ((ulong)fileInfo.nFileIndexHigh << 32) | fileInfo.nFileIndexLow;
+                        Console.WriteLine($"파일 ID 정보 가져오기 성공:");
+                        Console.WriteLine($"- FileId: {fileId}");
+                        Console.WriteLine($"- VolumeId: {fileInfo.dwVolumeSerialNumber}");
+                        return (fileId, fileInfo.dwVolumeSerialNumber);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"GetFileInformationByHandle 실패 - 에러 코드: {Marshal.GetLastWin32Error()}");
+                    }
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"GetFileId 중 오류: {ex.Message}");
+            }
+            
+            return null;
         }
     }
 }
