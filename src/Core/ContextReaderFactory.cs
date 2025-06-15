@@ -160,6 +160,7 @@ namespace overlay_gpt
             }
             else
             {
+                /*
                 // 한글 리더 추가
                 try
                 {   
@@ -178,7 +179,7 @@ namespace overlay_gpt
                 {
                     Console.WriteLine($"한글 관련 오류 발생: {e.Message}");
                 }
-
+                */  
                 // Word 리더 추가
                 try
                 {   
