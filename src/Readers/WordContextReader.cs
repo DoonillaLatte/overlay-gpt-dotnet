@@ -84,9 +84,23 @@ namespace overlay_gpt
 
         public WordContextReader(bool isTargetProg = false, string filePath = "")
         {
-            Console.WriteLine($"WordContextReader 생성 시도 - isTargetProg: {isTargetProg}");
+            Console.WriteLine($"WordContextReader 생성자 호출 - isTargetProg: {isTargetProg}, filePath: {filePath}");
             _isTargetProg = isTargetProg;
             _filePath = filePath;
+            
+            try
+            {
+                if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
+                {
+                    Console.WriteLine($"파일 존재 여부 확인: {File.Exists(_filePath)}");
+                    Console.WriteLine($"파일 전체 경로: {Path.GetFullPath(_filePath)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"초기화 중 오류 발생: {ex.Message}");
+                Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+            }
         }
 
         private static object GetActiveObject(string progID)
@@ -185,13 +199,23 @@ namespace overlay_gpt
         {
             try
             {
-                Console.WriteLine("Word 데이터 읽기 시작...");
+                Console.WriteLine("=== GetSelectedTextWithStyle 시작 ===");
+                Console.WriteLine($"isTargetProg: {_isTargetProg}");
+                Console.WriteLine($"filePath: {_filePath}");
+                Console.WriteLine($"includeStyle: {includeStyle}");
 
                 // isTargetProg가 false일 때만 현재 포커스된 프로세스가 Word인지 확인
-                if (!_isTargetProg && !IsWordProcessActive())
+                if (!_isTargetProg)
                 {
-                    Console.WriteLine("현재 포커스된 프로세스가 Word가 아닙니다.");
-                    return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    Console.WriteLine("Word 프로세스 활성화 상태 확인 중...");
+                    bool isWordActive = IsWordProcessActive();
+                    Console.WriteLine($"Word 프로세스 활성화 상태: {isWordActive}");
+                    
+                    if (!isWordActive)
+                    {
+                        Console.WriteLine("현재 포커스된 프로세스가 Word가 아닙니다.");
+                        return (string.Empty, new Dictionary<string, object>(), string.Empty);
+                    }
                 }
 
                 // Word COM 객체 생성 시도
@@ -208,10 +232,12 @@ namespace overlay_gpt
 
                         if (_isTargetProg && !string.IsNullOrEmpty(_filePath))
                         {
+                            Console.WriteLine($"대상 파일 처리 시작: {_filePath}");
                             // 기존 프로세스에서 원하는 파일 찾기
                             bool found = false;
                             foreach (Document doc in _wordApp.Documents)
                             {
+                                Console.WriteLine($"검사 중인 문서: {doc.FullName}");
                                 if (string.Equals(doc.FullName, _filePath, StringComparison.OrdinalIgnoreCase))
                                 {
                                     Console.WriteLine($"기존 프로세스에서 파일 찾음: {_filePath}");
@@ -225,13 +251,23 @@ namespace overlay_gpt
                             if (!found)
                             {
                                 Console.WriteLine($"기존 프로세스에서 파일을 찾지 못해 새로 열기 시도: {_filePath}");
-                                _document = _wordApp.Documents.Open(_filePath);
-                                Console.WriteLine("파일 열기 성공");
+                                try
+                                {
+                                    _document = _wordApp.Documents.Open(_filePath);
+                                    Console.WriteLine("파일 열기 성공");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"파일 열기 실패: {ex.Message}");
+                                    Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                                    throw;
+                                }
                             }
                         }
                         else
                         {
                             // 활성 문서 가져오기
+                            Console.WriteLine("활성 문서 가져오기 시도...");
                             _document = _wordApp.ActiveDocument;
                             if (_document == null)
                             {
@@ -273,6 +309,7 @@ namespace overlay_gpt
                 catch (Exception ex)
                 {
                     Console.WriteLine($"기존 Word 애플리케이션 찾기 실패: {ex.Message}");
+                    Console.WriteLine($"스택 트레이스: {ex.StackTrace}");
                     Console.WriteLine("Word 애플리케이션이 실행 중이지 않습니다.");
                     return (string.Empty, new Dictionary<string, object>(), string.Empty);
                 }

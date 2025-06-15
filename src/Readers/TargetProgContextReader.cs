@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Linq;
 
 namespace overlay_gpt
 {
@@ -34,7 +35,24 @@ namespace overlay_gpt
                     try
                     {
                         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ContextReader 생성 시작...");
-                        var reader = ContextReaderFactory.CreateReader(AutomationElement.FromHandle(Process.GetCurrentProcess().MainWindowHandle), true, filePath);
+                        // Word 프로세스 찾기
+                        var wordProcesses = Process.GetProcessesByName("WINWORD");
+                        if (wordProcesses.Length == 0)
+                        {
+                            throw new InvalidOperationException("Word 프로세스를 찾을 수 없습니다.");
+                        }
+                        
+                        // 가장 최근에 활성화된 Word 윈도우 찾기
+                        var wordWindow = wordProcesses
+                            .Select(p => AutomationElement.FromHandle(p.MainWindowHandle))
+                            .FirstOrDefault(e => e != null);
+                            
+                        if (wordWindow == null)
+                        {
+                            throw new InvalidOperationException("Word 윈도우를 찾을 수 없습니다.");
+                        }
+                        
+                        var reader = ContextReaderFactory.CreateReader(wordWindow, true, filePath);
                         
                         if (reader != null)
                         {
