@@ -45,9 +45,9 @@ namespace overlay_gpt
             // 텍스트 처리 서비스 초기화
             _textProcessingService = new TextProcessingService();
             
-            // 로그 윈도우 표시
-            LogWindow.Instance.Show();
-            LogWindow.Instance.Log("MainWindow Loaded");
+            // 로그 윈도우 배포용 숨김 처리
+            // LogWindow.Instance.Show();
+            //LogWindow.Instance.Log("MainWindow Loaded");
             
             // 창 숨기기 설정을 Loaded 이벤트 안으로 이동
             this.Loaded += async (s, e) =>

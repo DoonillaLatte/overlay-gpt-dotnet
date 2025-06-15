@@ -18,8 +18,8 @@ public partial class App : Application
         App app = new App();
         app.InitializeComponent();
         
-        // LogWindow를 먼저 띄운다
-        LogWindow.Instance.Show();
+        // LogWindow를 먼저 띄운다(배포용으로 숨김처리)
+        //LogWindow.Instance.Show();
         
         app.Run();
     }

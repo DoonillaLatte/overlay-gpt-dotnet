@@ -497,7 +497,27 @@ namespace overlay_gpt.Network
             catch (Exception ex)
             {
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] HandleApplyStoredResponse 오류: {ex.Message}");
-                throw;
+                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 스택 트레이스: {ex.StackTrace}");
+                
+                // Vue에 에러 메시지 전송
+                try
+                {
+                    var errorResponse = new
+                    {
+                        command = "apply_response_error",
+                        message = $"적용 실패: {ex.Message}",
+                        chat_id = data["chat_id"]?.Value<int>()
+                    };
+                    
+                    await _hubContext.Clients.All.SendAsync("ReceiveMessage", errorResponse);
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Vue에 에러 메시지 전송 완료");
+                }
+                catch (Exception sendEx)
+                {
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Vue 에러 메시지 전송 실패: {sendEx.Message}");
+                }
+                
+                // 서버를 종료하지 않고 계속 진행
             }
         }
 
