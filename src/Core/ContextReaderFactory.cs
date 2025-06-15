@@ -5,6 +5,7 @@ using Word = Microsoft.Office.Interop.Word;
 using Microsoft.VisualBasic;
 using System.Diagnostics;
 using System;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using System.IO;
 
@@ -16,6 +17,48 @@ namespace overlay_gpt
         {
             builder.AddConsole();
         });
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+
+        private static bool IsBrowserEnvironment()
+        {
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero)
+                    return false;
+
+                var windowTitle = new StringBuilder(256);
+                GetWindowText(foregroundWindow, windowTitle, windowTitle.Capacity);
+                string title = windowTitle.ToString().ToLower();
+
+                // 주요 브라우저 창 제목 패턴 확인
+                bool isBrowser = title.Contains("chrome") || 
+                               title.Contains("firefox") || 
+                               title.Contains("edge") || 
+                               title.Contains("safari") || 
+                               title.Contains("opera") || 
+                               title.Contains("브라우저") ||
+                               title.Contains("internet explorer") ||
+                               title.Contains("mozilla") ||
+                               title.Contains("webkit") ||
+                               title.Contains(" - google chrome") ||
+                               title.Contains(" - microsoft edge") ||
+                               title.Contains(" - mozilla firefox");
+
+                Console.WriteLine($"창 제목: '{title}', 브라우저 여부: {isBrowser}");
+                return isBrowser;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"브라우저 환경 확인 실패: {ex.Message}");
+                return false;
+            }
+        }
 
         public static IContextReader CreateReader(AutomationElement element, bool isTargetProg = false, string filePath = "")
         {
@@ -207,7 +250,27 @@ namespace overlay_gpt
                 }
             }*/
 
-            // 클립보드 리더 추가
+            // 브라우저 환경 확인 후 적절한 리더 선택
+            if (IsBrowserEnvironment())
+            {
+                try
+                {
+                    Console.WriteLine("브라우저 환경 감지됨 - BrowserContextReader 생성 시도");
+                    var browserReader = new BrowserContextReader();
+                    var (text, _, _) = browserReader.GetSelectedTextWithStyle();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        Console.WriteLine("BrowserContextReader 생성 성공");
+                        return browserReader;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"브라우저 관련 오류 발생: {e.Message}");
+                }
+            }
+
+            // 기본 클립보드 리더
             return new ClipboardContextReader();
         }
     }
