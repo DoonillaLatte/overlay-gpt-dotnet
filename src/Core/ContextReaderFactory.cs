@@ -68,6 +68,29 @@ namespace overlay_gpt
                 return new TextPatternContextReader();
             }
 
+            // NewWordContextReader를 가장 먼저 시도
+            try
+            {
+                Console.WriteLine("NewWordContextReader 생성 시도");
+
+                var newWordReader = new NewWordContextReader();
+                var (text, style, lineNumber) = newWordReader.GetSelectedTextWithStyle();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    Console.WriteLine($"NewWordContextReader 생성 성공 - 텍스트 길이: {text.Length}, 스타일 속성 수: {style.Count}, 라인 번호: {lineNumber}");
+                    return newWordReader;
+                }
+                else
+                {
+                    Console.WriteLine("NewWordContextReader: 선택된 텍스트가 없습니다.");
+                }
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"NewWord 관련 오류 발생: {e.Message}");
+                Console.WriteLine($"스택 트레이스: {e.StackTrace}");
+            }
+
             // 파일 경로가 있는 경우 확장자 확인
             if (!string.IsNullOrEmpty(filePath))
             {
